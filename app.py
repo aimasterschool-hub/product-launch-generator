@@ -64,13 +64,56 @@ def load_preset_to_session(preset):
 
 
 def clear_form_state():
-    """フォームの入力欄をデフォルト値にリセットする。保存済みプリセットは残る。"""
-    for k in list(st.session_state.keys()):
-        if (k.startswith("f_") or
-                k.startswith("str_") or
-                k.startswith("comment_") or
-                k.startswith("episode_theme_")):
-            del st.session_state[k]
+    """フォームの入力欄をデフォルト値にリセットする。保存済みプリセットは残る。
+
+    st.form 内のウィジェットはキーを削除しても表示がリセットされないため、
+    load_preset_to_session と同様にデフォルト値を明示的にセットする方式を使う。
+    """
+    # テキスト入力・テキストエリア → 空文字
+    for k in [
+        "knowhow_theme", "knowhow_notes",
+        "name", "seller_name", "seller_profile",
+        "interviewer_name", "interviewer_profile", "seller_authority",
+        "catchcopy", "target_audience",
+        "result1", "result2", "monthly_return", "ease_of_start",
+        "voice1", "voice2", "voice3",
+        "pain_points", "why_now",
+        "third_party_name", "third_party_points",
+        "consultation_method",
+        "regular_price", "special_price",
+        "limited_time", "limited_seats", "bonuses", "notes",
+    ]:
+        st.session_state[f"f_{k}"] = ""
+
+    # 強み欄（str_0〜str_3）
+    for i in range(4):
+        st.session_state[f"str_{i}"] = ""
+
+    # コメント促進パート
+    for i in range(5):
+        st.session_state[f"comment_{i}"] = ""
+        st.session_state[f"comment_include_{i}"] = True
+
+    # 各話テーマ
+    for i in range(5):
+        st.session_state[f"episode_theme_{i}"] = ""
+
+    # チェックボックス
+    st.session_state["f_include_knowhow"]    = False
+    st.session_state["f_use_episode_themes"] = False
+
+    # ラジオボタン
+    st.session_state["f_structure_type"]  = "従来型"
+    st.session_state["f_sales_flow_type"] = "直接販売型"
+
+    # セレクトボックス（フォームの default と一致させる）
+    st.session_state["f_category"]          = "FX・為替投資"
+    st.session_state["f_third_party_type"]  = "なし"
+    st.session_state["f_sales_start_day"]   = "翌日（1日後）"
+    st.session_state["f_installment"]       = "なし"
+    st.session_state["f_episode_structure"] = "1話完結"
+    st.session_state["f_closing_strength"]  = "真摯・控えめ（押し付けない）"
+    st.session_state["f_video_duration"]    = "7分（約2,100文字）"
 
 
 OUTPUT_DIR   = Path("output")
