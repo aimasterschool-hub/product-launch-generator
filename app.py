@@ -83,8 +83,10 @@ def build_user_prompt(info):
     interviewer = info.get("interviewer_name", "").strip()
     dialogue_style = f"インタビュアー「{interviewer}」との対話形式" if interviewer else "一人語り（モノローグ）形式"
 
-    comment_prompt = info.get("comment_prompt", "").strip()
-    comment_instruction = f"「{comment_prompt}」" if comment_prompt else "商品内容に合った質問を自動生成してください"
+    include_comment = info.get("include_comment", True)
+    episode_structure = info.get("episode_structure", "1話完結")
+    episode_count = int(episode_structure[0]) if episode_structure[0].isdigit() else 1
+    comment_prompts = info.get("comment_prompts", [])
 
     lines = [
         "以下のプロダクト情報をもとに、サンプル台本のスタイルを踏襲した台本を生成してください。",
@@ -129,10 +131,20 @@ def build_user_prompt(info):
         f"**特典内容**: {info.get('bonuses', '')}",
         "",
         "## コメント促進パート（動画末尾）",
-        f"**視聴者への質問**: {comment_instruction}",
+    ]
+
+    if not include_comment:
+        lines.append("コメント促進パートは不要です。含めないでください。")
+    else:
+        for i in range(episode_count):
+            cp = comment_prompts[i].strip() if i < len(comment_prompts) else ""
+            instruction = f"「{cp}」" if cp else "内容に合った質問を自動生成"
+            lines.append(f"**第{i+1}話のコメント促進**: {instruction}")
+
+    lines += [
         "",
         "## 構成オプション",
-        f"**話数構成**: {info.get('episode_structure', '1話完結')}",
+        f"**話数構成**: {episode_structure}",
         f"**クロージングの強度**: {info.get('closing_strength', '標準')}",
     ]
 
@@ -146,7 +158,7 @@ def build_user_prompt(info):
         "- 【ナレーション】【インタビュアー】【販売者】【SE】【映像】などの役割表記を適切に使ってください",
         "- サンプル台本と同じスタイル・語り口・構成で作成してください",
         "- 話数構成が指定されている場合は、その構成に合わせて台本を分けてください",
-        "- 動画末尾にコメント促進パートを必ず含めてください",
+        "- コメント促進パートが必要な場合は各話の動画末尾に必ず含めてください",
     ]
     return "\n".join(lines)
 
@@ -310,11 +322,16 @@ with st.form("product_form"):
 
     # コメント促進パート
     st.subheader("コメント促進パート（動画末尾）")
-    comment_prompt = st.text_input(
-        "視聴者に聞きたい質問 / お題（空欄で自動生成）",
-        placeholder="例：今の月収に満足していますか？コメントで教えてください！"
-    )
-    st.caption("空欄の場合、商品内容に合った質問を自動で生成します")
+    include_comment = st.checkbox("コメント促進パートを含める", value=True)
+    st.caption("話数ごとに異なる質問を設定できます。空欄の場合は内容に合わせて自動生成します。")
+    comment_prompts = []
+    for i in range(5):
+        cp = st.text_input(
+            f"第{i+1}話",
+            key=f"comment_{i}",
+            placeholder="例：今の月収に満足していますか？コメントで教えてください！（空欄で自動生成）"
+        )
+        comment_prompts.append(cp)
 
     st.divider()
 
@@ -403,7 +420,8 @@ if submitted:
         "third_party_points": third_party_points,
         "regular_price": regular_price, "special_price": special_price,
         "limited_time": limited_time, "installment": installment, "bonuses": bonuses,
-        "comment_prompt": comment_prompt,
+        "include_comment": include_comment,
+        "comment_prompts": comment_prompts,
         "episode_structure": episode_structure, "closing_strength": closing_strength,
         "notes": notes,
     }
