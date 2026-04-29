@@ -136,6 +136,8 @@ def build_user_prompt(info):
         f"**商品名**: {info.get('name', '')}",
         f"**ジャンル**: {info.get('category', '')}",
         f"**販売者名**: {info.get('seller_name', '')}",
+        f"**販売者のプロフィール**: {info.get('seller_profile', '')}",
+        f"**インタビュアープロフィール**: {info.get('interviewer_profile', '')}",
         f"**販売者の権威・実績**: {info.get('seller_authority', '')}",
         f"**キャッチコピー**: {info.get('catchcopy', '')}",
         f"**ターゲット層**: {info.get('target_audience', '')}",
@@ -163,6 +165,7 @@ def build_user_prompt(info):
         f"**定価**: {info.get('regular_price', '')}",
         f"**特別価格**: {info.get('special_price', '')}",
         f"**期間限定条件**: {info.get('limited_time', '')}",
+        f"**先着・定員制限**: {info.get('limited_seats', '')}",
         f"**分割対応**: {info.get('installment', 'なし')}",
         f"**特典内容**: {info.get('bonuses', '')}",
         "",
@@ -483,9 +486,19 @@ with st.form("product_form"):
             "教育・スキルアップ", "テック・SaaS", "食品・サプリ", "その他"
         ])
         seller_name = st.text_input("販売者名", placeholder="例：はたけ")
+        seller_profile = st.text_area(
+            "販売者のプロフィール",
+            placeholder="例：元会社員で副業からFXを始め、3年で脱サラ。現在はFX系YouTuberとして活動中。フォロワー10万人。",
+            height=80
+        )
         interviewer_name = st.text_input(
             "インタビュアー名（空欄で一人語り形式）",
             placeholder="例：ふじき　　※空欄→モノローグ形式"
+        )
+        interviewer_profile = st.text_area(
+            "インタビュアーのプロフィール（任意）",
+            placeholder="例：元銀行員、現在は投資系メディアのライター。読者目線で質問するのが得意。",
+            height=80
         )
         seller_authority = st.text_input("販売者の権威・実績", placeholder="例：FX系YouTuber、動画1500本以上、5年以上活動")
     with col2:
@@ -550,6 +563,7 @@ with st.form("product_form"):
         special_price = st.text_input("特別価格", placeholder="例：98,000円")
     with col9:
         limited_time = st.text_input("期間限定条件", placeholder="例：3日間限定")
+        limited_seats = st.text_input("先着・定員制限（任意）", placeholder="例：先着50名様、定員30名")
         installment = st.selectbox("分割対応", ["なし", "あり"])
     with col10:
         bonuses = st.text_area("特典内容（カンマ区切り）", placeholder="例：導入マニュアル、トレーダー手法、キャッシュを増やす方法", height=100)
@@ -681,8 +695,10 @@ if submitted:
         "include_knowhow": include_knowhow,
         "knowhow_theme": knowhow_theme,
         "knowhow_notes": knowhow_notes,
-        "name": name, "category": category, "seller_name": seller_name,
-        "interviewer_name": interviewer_name, "seller_authority": seller_authority,
+        "name": name, "category": category,
+        "seller_name": seller_name, "seller_profile": seller_profile,
+        "interviewer_name": interviewer_name, "interviewer_profile": interviewer_profile,
+        "seller_authority": seller_authority,
         "catchcopy": catchcopy, "target_audience": target_audience,
         "result1": result1, "result2": result2,
         "monthly_return": monthly_return, "ease_of_start": ease_of_start,
@@ -692,7 +708,8 @@ if submitted:
         "third_party_type": third_party_type, "third_party_name": third_party_name,
         "third_party_points": third_party_points,
         "regular_price": regular_price, "special_price": special_price,
-        "limited_time": limited_time, "installment": installment, "bonuses": bonuses,
+        "limited_time": limited_time, "limited_seats": limited_seats,
+        "installment": installment, "bonuses": bonuses,
         "comment_includes": comment_includes,
         "comment_prompts": comment_prompts,
         "episode_structure": episode_structure, "closing_strength": closing_strength,
