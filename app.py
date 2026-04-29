@@ -233,16 +233,29 @@ def search_trends(tavily_api_key, category, product_name):
 
 def generate_slide_data(client, script):
     """Claudeに台本を渡してスライド構成をJSON形式で生成する。"""
-    prompt = f"""以下の台本をYouTube横動画用のスライド構成に変換してください。
+    prompt = f"""これはプロダクトローンチの台本です。
+この台本をよりポップでわかりやすく伝わりやすくするための、まとめのプレゼンテーションを作成してください。
 
 ## 台本
 {script}
 
-## 出力ルール
-- JSONのみ出力。前後の説明文・コードブロック記号は不要。
-- 1スライドの箇条書きは最大4つ
-- タイトルは20文字以内
+## スライド作成ルール
+- プロのデザイナーが作ったような、洗練されたスライド構成にしてください
+- 下部にテロップが入るため、テキストは上寄せ配置を意識した構成にしてください
+- 動画に同期してわかりやすくするため、台本の流れに沿った順番で、文字の構成はあまり大きく変えないでください
+- 各スライドには台本の内容に合ったイメージイラスト・絵文字を `emoji` フィールドで提案してください
+- タイトルは短く印象的に（20文字以内）
+- 箇条書きは1スライド最大4つ、各項目は簡潔に（30文字以内）
 - スライド枚数は台本の長さに応じて適切に（最小5枚）
+
+## 自己チェック（出力前に必ず確認）
+- デザインが崩れていないか（タイトルと本文が重複していないか）
+- emoji は台本の内容とマッチしているか
+- 文字化けしそうな特殊文字が含まれていないか
+
+## 出力ルール
+- JSONのみ出力。説明文・コードブロック記号（```）は不要
+- 必ず以下のJSON形式を守ること
 
 ## JSON形式
 {{
@@ -251,6 +264,7 @@ def generate_slide_data(client, script):
     {{
       "title": "スライドタイトル",
       "content": ["箇条書き1", "箇条書き2"],
+      "emoji": "📈",
       "notes": "このスライドに対応するナレーション"
     }}
   ]
@@ -286,8 +300,10 @@ def build_pptx(slide_data, pptx_size=(13.33, 7.5)):
     for slide_info in slide_data.get("slides", []):
         slide = prs.slides.add_slide(content_layout)
 
-        # タイトル
-        slide.shapes.title.text = slide_info.get("title", "")
+        # タイトル（絵文字付き）
+        emoji = slide_info.get("emoji", "")
+        title_text = f"{emoji}  {slide_info.get('title', '')}" if emoji else slide_info.get("title", "")
+        slide.shapes.title.text = title_text
         slide.shapes.title.text_frame.paragraphs[0].font.size = Pt(32)
 
         # 箇条書き
@@ -373,17 +389,22 @@ def build_png_slides(slide_data, design, png_size=(1920, 1080)):
         # アクセントバー（上部）
         draw.rectangle([0, 0, W, 14], fill=ac)
 
-        # タイトル
-        draw.text((80, 60), slide_info.get("title", ""), font=font_title, fill=tc)
+        # タイトル（絵文字付き）
+        emoji = slide_info.get("emoji", "")
+        title_text = f"{emoji}  {slide_info.get('title', '')}" if emoji else slide_info.get("title", "")
+        draw.text((80, 60), title_text, font=font_title, fill=tc)
 
         # 区切り線
         draw.rectangle([80, 160, W - 80, 168], fill=ac)
 
-        # 箇条書き
+        # 箇条書き（下部20%はテロップスペースとして空ける）
+        max_y = int(H * 0.78)
         y = 210
         for item in slide_info.get("content", []):
             wrapped = wrap_text(f"  •  {item}", font_content, W - 200, draw)
             for line in wrapped:
+                if y + 58 > max_y:
+                    break
                 draw.text((100, y), line, font=font_content, fill=cc)
                 y += 58
             y += 10
