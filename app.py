@@ -61,8 +61,25 @@ def load_preset_to_session(preset):
         st.session_state[f"comment_include_{i}"] = v
     for i, v in enumerate(preset.get("comment_prompts", [""]*5)):
         st.session_state[f"comment_{i}"] = v
-OUTPUT_DIR = Path("output")
+OUTPUT_DIR   = Path("output")
+PRESETS_FILE = Path("presets.json")
 MODEL = "claude-opus-4-7"
+
+
+def load_presets_from_file():
+    if PRESETS_FILE.exists():
+        try:
+            return json.loads(PRESETS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_presets_to_file(presets):
+    try:
+        PRESETS_FILE.write_text(json.dumps(presets, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def load_samples():
@@ -701,6 +718,10 @@ if not api_key:
 
 tavily_api_key = os.environ.get("TAVILY_API_KEY", "")
 
+# セッション初回起動時にファイルからプリセットを読み込む
+if "saved_presets" not in st.session_state:
+    st.session_state["saved_presets"] = load_presets_from_file()
+
 with st.sidebar:
     st.header("プリセット管理")
     st.caption("""
@@ -726,6 +747,7 @@ with st.sidebar:
             if st.button("削除", use_container_width=True):
                 if sel != "── 選択 ──":
                     del st.session_state["saved_presets"][sel]
+                    save_presets_to_file(st.session_state["saved_presets"])
                     st.rerun()
     else:
         st.caption("保存済みプリセットはありません")
@@ -739,6 +761,7 @@ with st.sidebar:
             if "saved_presets" not in st.session_state:
                 st.session_state["saved_presets"] = {}
             st.session_state["saved_presets"].update(data)
+            save_presets_to_file(st.session_state["saved_presets"])
             st.success("インポートしました")
             st.rerun()
         except Exception:
@@ -1149,21 +1172,6 @@ if submitted:
 
         show_download(script, display_name, stats)
 
-        # プリセット保存
-        st.divider()
-        st.subheader("この入力内容を保存する")
-        col_pn, col_pb = st.columns([3, 1])
-        with col_pn:
-            preset_name = st.text_input("プリセット名", placeholder="例：スマートイット用、FX商品A用", key="preset_save_name")
-        with col_pb:
-            st.write("")
-            if st.button("保存する", use_container_width=True, key="save_preset_btn"):
-                if preset_name:
-                    if "saved_presets" not in st.session_state:
-                        st.session_state["saved_presets"] = {}
-                    st.session_state["saved_presets"][preset_name] = info
-                    st.success(f"「{preset_name}」を保存しました。左のサイドバーから呼び出せます。")
-
     except anthropic.APIError as e:
         st.error(f"APIエラー: {e}")
 
@@ -1171,6 +1179,25 @@ if submitted:
 # ── 再編集パネル ──────────────────────────────────────────────────────────────
 
 if "current_script" in st.session_state:
+
+    # ── プリセット保存（フォーム外で常時動作）──
+    st.divider()
+    st.subheader("この入力内容を保存する")
+    col_pn, col_pb = st.columns([3, 1])
+    with col_pn:
+        preset_name = st.text_input("プリセット名", placeholder="例：スマートイット用、FX商品A用", key="preset_save_name")
+    with col_pb:
+        st.write("")
+        if st.button("保存する", use_container_width=True, key="save_preset_btn"):
+            if preset_name and "last_info" in st.session_state:
+                if "saved_presets" not in st.session_state:
+                    st.session_state["saved_presets"] = {}
+                st.session_state["saved_presets"][preset_name] = st.session_state.last_info
+                save_presets_to_file(st.session_state["saved_presets"])
+                st.success(f"「{preset_name}」を保存しました。左のサイドバーから呼び出せます。")
+            elif not preset_name:
+                st.warning("プリセット名を入力してください")
+
     st.divider()
     st.subheader("再編集")
     st.caption("生成した台本に修正指示を出して再生成できます")
