@@ -88,6 +88,10 @@ def build_user_prompt(info):
     episode_structure = info.get("episode_structure", "1話完結")
     episode_count = int(episode_structure[0]) if episode_structure[0].isdigit() else 1
 
+    include_knowhow = info.get("include_knowhow", False)
+    knowhow_theme = info.get("knowhow_theme", "").strip()
+    knowhow_notes = info.get("knowhow_notes", "").strip()
+
     lines = [
         "以下のプロダクト情報をもとに、サンプル台本のスタイルを踏襲した台本を生成してください。",
         "",
@@ -95,6 +99,23 @@ def build_user_prompt(info):
         f"**タイプ**: {structure_type}",
         f"**説明**: {structure_desc}",
         f"**話し方スタイル**: {dialogue_style}",
+        "",
+        "## フロントエンド型ノウハウパート",
+    ]
+
+    if include_knowhow and knowhow_theme:
+        lines += [
+            f"**ノウハウテーマ**: {knowhow_theme}",
+            f"**補足メモ**: {knowhow_notes if knowhow_notes else 'なし'}",
+            "このテーマについて視聴者にとって価値ある具体的なノウハウを台本の前半に組み込んでください。",
+            "ノウハウ提供の後、自然に商品の紹介につなげてください。",
+        ]
+    elif include_knowhow:
+        lines.append("商品カテゴリに合った価値あるノウハウを台本の前半に自動生成して組み込んでください。")
+    else:
+        lines.append("ノウハウパートは不要です。")
+
+    lines += [
         "",
         "## 商品・基本情報",
         f"**商品名**: {info.get('name', '')}",
@@ -238,6 +259,25 @@ with st.form("product_form"):
         ],
         horizontal=True,
     )
+
+    st.divider()
+
+    # フロントエンド型ノウハウパート
+    st.subheader("フロントエンド型ノウハウパート")
+    include_knowhow = st.checkbox("ノウハウパートを含める", value=False)
+    st.caption("オンにすると、指定テーマのノウハウ・価値提供コンテンツを台本に自動で組み込みます")
+    col_kh1, col_kh2 = st.columns(2)
+    with col_kh1:
+        knowhow_theme = st.text_input(
+            "ノウハウのテーマ / キーワード",
+            placeholder="例：FXスキャルピング、副業で稼ぐ方法、仮想通貨の始め方"
+        )
+    with col_kh2:
+        knowhow_notes = st.text_area(
+            "ノウハウの補足メモ（任意）",
+            placeholder="例：初心者向けに5分足を使った手法を説明したい、具体的なエントリーポイントを入れてほしい",
+            height=80
+        )
 
     st.divider()
 
@@ -419,6 +459,9 @@ def show_download(script, display_name, stats):
 if submitted:
     info = {
         "structure_type": structure_type,
+        "include_knowhow": include_knowhow,
+        "knowhow_theme": knowhow_theme,
+        "knowhow_notes": knowhow_notes,
         "name": name, "category": category, "seller_name": seller_name,
         "interviewer_name": interviewer_name, "seller_authority": seller_authority,
         "catchcopy": catchcopy, "target_audience": target_audience,
