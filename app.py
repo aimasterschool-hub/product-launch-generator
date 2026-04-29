@@ -406,6 +406,10 @@ with st.form("product_form"):
             "15分（約4,500文字）",
             "20分（約6,000文字）",
             "30分（約9,000文字）",
+            "45分（約13,500文字）",
+            "60分（約18,000文字）",
+            "90分（約27,000文字）",
+            "120分（約36,000文字）",
         ], index=2)
     with col12:
         notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100)
@@ -429,6 +433,10 @@ DURATION_MAX_TOKENS = {
     "15分": 8192,
     "20分": 12000,
     "30分": 16000,
+    "45分": 20000,
+    "60分": 24000,
+    "90分": 28000,
+    "120分": 32000,
 }
 
 
@@ -519,7 +527,7 @@ if submitted:
     try:
         client = anthropic.Anthropic(api_key=api_key)
         # 動画の長さからmax_tokensを決定
-        duration_key = info.get("video_duration", "7分")[:2]
+        duration_key = info.get("video_duration", "7分（約2,100文字）").split("（")[0]
         episode_num = int(info.get("episode_structure", "1話完結")[0]) if info.get("episode_structure", "1")[0].isdigit() else 1
         base_tokens = DURATION_MAX_TOKENS.get(duration_key, 4096)
         max_tokens = min(base_tokens * episode_num, 32000)
