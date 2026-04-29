@@ -514,17 +514,42 @@ def hex_to_rgb(hex_color):
     return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
 
-def get_font(size):
-    font_paths = [
+def _find_cjk_font():
+    """Find a CJK-capable font on this system and cache the path."""
+    candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansJP-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansJP-Regular.ttf",
         "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
     ]
-    for p in font_paths:
+    for p in candidates:
         if os.path.exists(p):
-            return ImageFont.truetype(p, size)
+            return p
+    # Fallback: glob search for any Noto CJK font
+    import glob
+    for pattern in [
+        "/usr/share/fonts/**/*CJK*Regular*.ttc",
+        "/usr/share/fonts/**/*CJK*Regular*.otf",
+        "/usr/share/fonts/**/*Noto*Regular*.ttc",
+    ]:
+        matches = sorted(glob.glob(pattern, recursive=True))
+        if matches:
+            return matches[0]
+    return None
+
+
+_FONT_PATH = _find_cjk_font()
+
+
+def get_font(size):
+    if _FONT_PATH:
+        try:
+            return ImageFont.truetype(_FONT_PATH, size)
+        except Exception:
+            pass
     return ImageFont.load_default()
 
 
@@ -543,26 +568,34 @@ def wrap_text(text, font, max_width, draw):
 
 
 def build_png_slides(slide_data, design, png_size=(1920, 1080)):
-    """slide_dataとdesignからPNG画像リストを生成する。"""
+    """slide_dataとdesignからPNG画像リストを生成する。全サイズ対応（比例スケール）。"""
     W, H = png_size
     bg_c = hex_to_rgb(design["bg"])
     tc   = hex_to_rgb(design["title"])
     cc   = hex_to_rgb(design["content"])
     ac   = hex_to_rgb(design["accent"])
 
-    telop_h = int(H * 0.22)   # 下部テロップスペース
-    area_h  = H - telop_h     # 描画有効エリア
+    telop_h = int(H * 0.22)
+    area_h  = H - telop_h
 
-    # フォントキャッシュ（サイズ: ピクセル）
-    f96 = get_font(96)
-    f72 = get_font(72)
-    f56 = get_font(56)
-    f44 = get_font(44)
-    f38 = get_font(38)
-    f32 = get_font(30)
+    # 基準解像度 1920×1080 からのスケール係数
+    sw = W / 1920
+    sh = H / 1080
+    s  = min(sw, sh)   # フォントは短辺に合わせる
+
+    def fw(v): return max(1, int(v * sw))   # 横ピクセル
+    def fh(v): return max(1, int(v * sh))   # 縦ピクセル
+    def fs(v): return max(8, int(v * s))    # フォントサイズ
+
+    f_huge    = get_font(fs(88))
+    f_title   = get_font(fs(56))
+    f_content = get_font(fs(36))
+    f_small   = get_font(fs(28))
+
+    lh_title   = fs(72)   # タイトル行間
+    lh_content = fs(50)   # 本文行間
 
     def draw_centered(draw, text, font, lh, center_y, max_w, color):
-        """テキストを折り返して中央揃えで描画し、描画終端y座標を返す。"""
         lines = wrap_text(text, font, max_w, draw)
         total = len(lines) * lh
         y = center_y - total // 2
@@ -576,8 +609,10 @@ def build_png_slides(slide_data, design, png_size=(1920, 1080)):
     # ── タイトルスライド ──
     img = Image.new("RGB", (W, H), bg_c)
     draw = ImageDraw.Draw(img)
-    draw.rectangle([0, area_h // 2 - 8, W, area_h // 2 + 8], fill=ac)
-    draw_centered(draw, slide_data.get("title", ""), f72, 88, area_h // 2 - 80, W - 160, tc)
+    cy = area_h // 2
+    draw.rectangle([0, cy - fh(6), W, cy + fh(6)], fill=ac)
+    draw_centered(draw, slide_data.get("title", ""), f_huge,
+                  fs(100), cy - fh(60), W - fw(120), tc)
     images.append(img)
 
     for slide_info in slide_data.get("slides", []):
@@ -590,54 +625,57 @@ def build_png_slides(slide_data, design, png_size=(1920, 1080)):
         draw = ImageDraw.Draw(img)
 
         if layout == "impact":
-            # ── インパクト：中央に大きくタイトル ──
-            bw = 14
+            # ── インパクト：枠線＋中央大テキスト ──
+            bw = max(4, fh(12))
             draw.rectangle([0, 0, W - 1, area_h - 1], outline=ac, width=bw)
             if emoji:
-                draw.text((70, 55), emoji, font=f56, fill=ac)
-            has_content = bool(content)
-            center_y = area_h // 2 - (50 if has_content else 0)
-            bottom_y = draw_centered(draw, title, f72, 90, center_y, W - 200, tc)
-            if has_content:
-                for item in content[:2]:
-                    draw.text((W // 2, bottom_y + 14), item, font=f38, fill=cc, anchor="mt")
-                    bottom_y += 54
+                draw.text((fw(60), fh(48)), emoji, font=f_title, fill=ac)
+            has_sub = bool(content)
+            cy = area_h // 2 - (fh(40) if has_sub else 0)
+            bot = draw_centered(draw, title, f_huge, fs(100), cy, W - fw(160), tc)
+            for item in (content[:2] if has_sub else []):
+                draw.text((W // 2, bot + fh(12)), item, font=f_content, fill=cc, anchor="mt")
+                bot += lh_content
 
         elif layout == "section":
-            # ── セクション：左サイドバー＋中央タイトル ──
-            draw.rectangle([0, 0, 20, H], fill=ac)
-            draw.rectangle([0, 0, W, 12], fill=ac)
-            draw.rectangle([0, area_h - 12, W, area_h], fill=ac)
-            emoji_offset = 0
+            # ── セクション：左バー＋上下ライン＋中央タイトル ──
+            draw.rectangle([0, 0, fw(18), H], fill=ac)
+            draw.rectangle([0, 0, W, fh(10)], fill=ac)
+            draw.rectangle([0, area_h - fh(10), W, area_h], fill=ac)
+            emoji_off = 0
             if emoji:
-                draw.text((W // 2, area_h // 2 - 110), emoji, font=f72, fill=ac, anchor="mm")
-                emoji_offset = 80
-            draw_centered(draw, title, f56, 70, area_h // 2 + emoji_offset, W - 120, tc)
+                draw.text((W // 2, area_h // 2 - fh(100)),
+                          emoji, font=f_huge, fill=ac, anchor="mm")
+                emoji_off = fh(70)
+            draw_centered(draw, title, f_title, lh_title,
+                          area_h // 2 + emoji_off, W - fw(100), tc)
             if content:
-                draw.text((W // 2, area_h // 2 + emoji_offset + 100),
-                          content[0], font=f32, fill=cc, anchor="mt")
+                draw.text((W // 2, area_h // 2 + emoji_off + fh(90)),
+                          content[0], font=f_small, fill=cc, anchor="mt")
 
         else:
-            # ── standard：上バー＋左揃えタイトル（折り返し対応）＋箇条書き ──
-            draw.rectangle([0, 0, W, 14], fill=ac)
-            title_with_emoji = f"{emoji}  {title}" if emoji else title
-            title_lines = wrap_text(title_with_emoji, f56, W - 160, draw)
-            title_lh = 68
-            y_t = 46
-            for line in title_lines:
-                draw.text((80, y_t), line, font=f56, fill=tc)
-                y_t += title_lh
-            sep_y = y_t + 10
-            draw.rectangle([80, sep_y, W - 80, sep_y + 6], fill=ac)
-            y = sep_y + 22
+            # ── standard：上バー＋タイトル折り返し＋箇条書き ──
+            bar_h = fh(12)
+            draw.rectangle([0, 0, W, bar_h], fill=ac)
+
+            title_str = f"{emoji}  {title}" if emoji else title
+            t_lines = wrap_text(title_str, f_title, W - fw(140), draw)
+            y = fh(38)
+            for line in t_lines:
+                draw.text((fw(70), y), line, font=f_title, fill=tc)
+                y += lh_title
+
+            sep_y = y + fh(8)
+            draw.rectangle([fw(70), sep_y, W - fw(70), sep_y + fh(4)], fill=ac)
+
+            y = sep_y + fh(18)
             for item in content:
-                wrapped = wrap_text(f"  •  {item}", f38, W - 200, draw)
-                for line in wrapped:
-                    if y + 54 > area_h:
+                for line in wrap_text(f"  •  {item}", f_content, W - fw(160), draw):
+                    if y + lh_content > area_h:
                         break
-                    draw.text((100, y), line, font=f38, fill=cc)
-                    y += 54
-                y += 10
+                    draw.text((fw(80), y), line, font=f_content, fill=cc)
+                    y += lh_content
+                y += fh(8)
 
         images.append(img)
 
