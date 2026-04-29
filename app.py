@@ -228,6 +228,19 @@ def build_user_prompt(info):
         f"**クロージングの強度**: {info.get('closing_strength', '標準')}",
     ]
 
+    if info.get("use_episode_themes"):
+        themes = info.get("episode_themes", [])
+        specified = [(i+1, t) for i, t in enumerate(themes[:episode_count]) if t.strip()]
+        if specified:
+            lines.append("")
+            lines.append("## 各話の内容指定")
+            for num, theme in specified:
+                lines.append(f"**第{num}話**: {theme}")
+            lines.append("※ 内容が指定されている話は、その内容に沿って台本を作成してください。")
+
+    lines += [
+    ]
+
     if info.get("notes"):
         lines += ["", f"**追加メモ**: {info['notes']}"]
 
@@ -731,6 +744,24 @@ with st.form("product_form"):
     with col12:
         notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100, key="f_notes")
 
+    st.divider()
+
+    # 話数ごとの内容指定
+    st.subheader("話数ごとの内容指定")
+    use_episode_themes = st.checkbox("各話の内容・テーマを指定する", value=False, key="f_use_episode_themes")
+    st.caption("オンにすると、各話で話す内容を個別に指定できます。空欄の話はAIが自動で構成します。")
+    episode_themes = []
+    for i in range(5):
+        theme = st.text_area(
+            f"第{i+1}話の内容・テーマ",
+            placeholder=f"例：第{i+1}話では〇〇について話す。ポイントは△△と□□。",
+            height=80,
+            key=f"episode_theme_{i}",
+        )
+        episode_themes.append(theme)
+
+    st.divider()
+
     use_trend_search = st.checkbox(
         "最新トレンドをWeb検索して台本に反映する",
         value=False,
@@ -828,6 +859,8 @@ if submitted:
         "comment_prompts": comment_prompts,
         "episode_structure": episode_structure, "closing_strength": closing_strength,
         "video_duration": video_duration,
+        "use_episode_themes": use_episode_themes,
+        "episode_themes": episode_themes,
         "notes": notes,
     }
     user_prompt = build_user_prompt(info)
