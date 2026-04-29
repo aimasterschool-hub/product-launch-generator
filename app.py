@@ -61,6 +61,18 @@ def load_preset_to_session(preset):
         st.session_state[f"comment_include_{i}"] = v
     for i, v in enumerate(preset.get("comment_prompts", [""]*5)):
         st.session_state[f"comment_{i}"] = v
+
+
+def clear_form_state():
+    """フォームの入力欄をデフォルト値にリセットする。保存済みプリセットは残る。"""
+    for k in list(st.session_state.keys()):
+        if (k.startswith("f_") or
+                k.startswith("str_") or
+                k.startswith("comment_") or
+                k.startswith("episode_theme_")):
+            del st.session_state[k]
+
+
 OUTPUT_DIR   = Path("output")
 PRESETS_FILE = Path("presets.json")
 MODEL = "claude-opus-4-7"
@@ -766,8 +778,14 @@ with st.sidebar:
 **使い方**
 - **保存**：台本生成後に下部の「この入力内容を保存する」でプリセット名をつけて保存
 - **呼び出し**：下のリストから選んで「呼び出す」をクリック
+- **クリア**：「フォームをクリア」で入力欄を初期化（プリセットは削除されません）
 - **エクスポート/インポート**：JSONファイルで他のPCへの持ち出しや共有が可能
 """)
+
+    if st.button("フォームをクリア", use_container_width=True, key="clear_form_btn"):
+        clear_form_state()
+        st.toast("入力内容をクリアしました")
+        st.rerun()
 
     saved_presets = st.session_state.get("saved_presets", {})
 
@@ -784,11 +802,34 @@ with st.sidebar:
         with col_del:
             if st.button("削除", use_container_width=True):
                 if sel != "── 選択 ──":
+                    # 削除前に復元バッファへ退避（最大5件）
+                    if "recently_deleted" not in st.session_state:
+                        st.session_state["recently_deleted"] = {}
+                    rd = st.session_state["recently_deleted"]
+                    rd[sel] = st.session_state["saved_presets"][sel]
+                    if len(rd) > 5:
+                        oldest = next(iter(rd))
+                        del rd[oldest]
                     del st.session_state["saved_presets"][sel]
                     save_presets_to_file(st.session_state["saved_presets"])
+                    st.toast(f"「{sel}」を削除しました（下の「削除済み」から復元できます）")
                     st.rerun()
     else:
         st.caption("保存済みプリセットはありません")
+
+    # ── 削除済みプリセット（復元） ──
+    recently_deleted = st.session_state.get("recently_deleted", {})
+    if recently_deleted:
+        st.caption("🗑️ 削除済み（復元可能）")
+        for del_name in list(recently_deleted.keys()):
+            col_r, col_rb = st.columns([3, 1])
+            col_r.text(del_name)
+            if col_rb.button("復元", key=f"restore_{del_name}"):
+                st.session_state["saved_presets"][del_name] = recently_deleted[del_name]
+                save_presets_to_file(st.session_state["saved_presets"])
+                del st.session_state["recently_deleted"][del_name]
+                st.toast(f"「{del_name}」を復元しました")
+                st.rerun()
 
     # JSONインポート
     st.caption("JSONファイルから読み込む")
