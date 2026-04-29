@@ -333,6 +333,7 @@ JSONのみ出力してください。説明文・コードブロック記号（`
   "title": "動画タイトル",
   "slides": [
     {{
+      "episode": 1,
       "layout": "impact",
       "title": "スライドタイトル（20文字以内）",
       "content": ["サブテキスト（impact/sectionは0〜2個、standardは最大4個）"],
@@ -340,7 +341,9 @@ JSONのみ出力してください。説明文・コードブロック記号（`
       "notes": "このスライドに対応する台本の該当部分（抜粋）"
     }}
   ]
-}}"""
+}}
+
+`episode` フィールドは必須です。そのスライドが何話目の内容かを整数で記入してください（1話完結の場合はすべて 1）。"""
 
     response = client.messages.create(
         model=MODEL,
@@ -626,6 +629,45 @@ def build_png_zip(images, display_name):
             img_buf = BytesIO()
             img.save(img_buf, format="PNG")
             zf.writestr(f"slide_{i+1:03d}.png", img_buf.getvalue())
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def group_slides_by_episode(slide_data):
+    """スライドを episode フィールドでグループ分けして {ep_num: [slides]} を返す。"""
+    groups = {}
+    for s in slide_data.get("slides", []):
+        ep = int(s.get("episode", 1))
+        groups.setdefault(ep, []).append(s)
+    return dict(sorted(groups.items()))
+
+
+def build_slides_zip(slide_data, design, fmt, output_formats, display_name):
+    """話数ごとにフォルダ分けし、PNG と PPTX を1つのZIPにまとめて返す。"""
+    episodes = group_slides_by_episode(slide_data)
+    video_title = slide_data.get("title", display_name)
+    is_multi = len(episodes) > 1
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for ep_num, slides in episodes.items():
+            ep_label = f"第{ep_num}話" if is_multi else display_name
+            ep_title = f"{video_title}　第{ep_num}話" if is_multi else video_title
+            ep_data  = {"title": ep_title, "slides": slides}
+            prefix   = f"{ep_label}/" if is_multi else ""
+
+            if "PNG (.zip)" in output_formats:
+                imgs = build_png_slides(ep_data, design, fmt["png"])
+                for i, img in enumerate(imgs):
+                    img_buf = BytesIO()
+                    img.save(img_buf, format="PNG")
+                    zf.writestr(f"{prefix}slide_{i+1:03d}.png", img_buf.getvalue())
+
+            if "PPT (.pptx)" in output_formats:
+                pptx_bytes = build_pptx(ep_data, design, fmt["pptx"])
+                fname = f"{ep_label}.pptx" if is_multi else "slides.pptx"
+                zf.writestr(f"{prefix}{fname}", pptx_bytes)
+
     buf.seek(0)
     return buf.getvalue()
 
@@ -1241,37 +1283,33 @@ if "current_script" in st.session_state:
             display_name = st.session_state.display_name
             ts = st.session_state.setdefault("slide_output_ts", datetime.now().strftime("%Y%m%d_%H%M%S"))
 
-            if "PPT (.pptx)" in _ofmts and "slide_pptx_bytes" not in st.session_state:
-                with st.spinner("PPTXを作成中..."):
-                    st.session_state.slide_pptx_bytes = build_pptx(_sd, _design, _fmt["pptx"])
+            if "slide_zip_bytes" not in st.session_state:
+                episodes = group_slides_by_episode(_sd)
+                ep_count = len(episodes)
+                label = f"{_count} 枚 / {ep_count} 話" if ep_count > 1 else f"{_count} 枚"
+                with st.spinner(f"スライドを出力中（{label}）..."):
+                    st.session_state.slide_zip_bytes = build_slides_zip(
+                        _sd, _design, _fmt, _ofmts, display_name
+                    )
 
-            if "PNG (.zip)" in _ofmts and "slide_zip_bytes" not in st.session_state:
-                with st.spinner(f"PNG画像を生成中（{_count} 枚）..."):
-                    imgs = build_png_slides(_sd, _design, _fmt["png"])
-                    st.session_state.slide_zip_bytes = build_png_zip(imgs, display_name)
+            episodes = group_slides_by_episode(_sd)
+            is_multi = len(episodes) > 1
+            if is_multi:
+                ep_labels = "・".join(f"第{ep}話" for ep in episodes)
+                st.info(f"フォルダ構成: {ep_labels}")
 
-            if "slide_pptx_bytes" in st.session_state:
-                st.download_button(
-                    "PPTをダウンロード (.pptx)",
-                    data=st.session_state.slide_pptx_bytes,
-                    file_name=f"{ts}_{display_name}_slides.pptx",
-                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    use_container_width=True,
-                    key="dl_pptx_main",
-                )
-            if "slide_zip_bytes" in st.session_state:
-                st.download_button(
-                    "PNGをダウンロード (.zip)",
-                    data=st.session_state.slide_zip_bytes,
-                    file_name=f"{ts}_{display_name}_slides_png.zip",
-                    mime="application/zip",
-                    use_container_width=True,
-                    key="dl_png_main",
-                )
-
+            st.download_button(
+                "スライドをダウンロード (.zip)",
+                data=st.session_state.slide_zip_bytes,
+                file_name=f"{ts}_{display_name}_slides.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key="dl_slides_main",
+            )
             st.success(f"全 {_count} 枚の出力が完了しました")
+
             if st.button("スライドを作り直す", use_container_width=True, key="slide_redo_btn"):
-                for k in ("slide_preview_ready", "slide_approved", "slide_pptx_bytes",
+                for k in ("slide_preview_ready", "slide_approved",
                           "slide_zip_bytes", "slide_output_ts"):
                     st.session_state.pop(k, None)
                 st.rerun()
@@ -1328,33 +1366,21 @@ if "current_script" in st.session_state:
                     rev_ofmts = st.session_state.get("slide_output_formats", ["PPT (.pptx)"])
                     display_name = st.session_state.display_name
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    # キャッシュをリセット（修正後は再生成）
-                    for k in ("slide_pptx_bytes", "slide_zip_bytes", "slide_output_ts"):
-                        st.session_state.pop(k, None)
+                    # 修正後ZIPを再生成
+                    with st.spinner("出力ZIPを生成中..."):
+                        rev_zip = build_slides_zip(slide_data, design, fmt, rev_ofmts, display_name)
+                    st.session_state.slide_zip_bytes = rev_zip
                     st.session_state.slide_approved = True
+                    st.session_state.pop("slide_output_ts", None)
 
-                    if "PPT (.pptx)" in rev_ofmts:
-                        pptx_bytes = build_pptx(slide_data, design, fmt["pptx"])
-                        st.download_button(
-                            "修正済みPPTをダウンロード (.pptx)",
-                            data=pptx_bytes,
-                            file_name=f"{ts}_{display_name}_revised.pptx",
-                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                            use_container_width=True,
-                            key="dl_revised_pptx",
-                        )
-
-                    if "PNG (.zip)" in rev_ofmts:
-                        images = build_png_slides(slide_data, design, fmt["png"])
-                        zip_bytes = build_png_zip(images, display_name)
-                        st.download_button(
-                            "修正済みPNGをダウンロード (.zip)",
-                            data=zip_bytes,
-                            file_name=f"{ts}_{display_name}_revised_png.zip",
-                            mime="application/zip",
-                            use_container_width=True,
-                            key="dl_revised_png",
-                        )
+                    st.download_button(
+                        "修正済みスライドをダウンロード (.zip)",
+                        data=rev_zip,
+                        file_name=f"{ts}_{display_name}_revised_slides.zip",
+                        mime="application/zip",
+                        use_container_width=True,
+                        key="dl_revised_zip",
+                    )
 
                 except Exception as e:
                     st.error(f"スライド修正エラー: {e}")
