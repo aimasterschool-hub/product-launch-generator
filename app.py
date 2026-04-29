@@ -42,6 +42,7 @@ PRESET_SIMPLE_KEYS = [
     "regular_price", "special_price", "limited_time", "limited_seats",
     "installment", "bonuses",
     "episode_structure", "closing_strength", "video_duration", "notes",
+    "sales_flow_type", "sales_start_day", "consultation_method",
 ]
 
 
@@ -195,6 +196,23 @@ def build_user_prompt(info):
         f"**第三者の種類**: {info.get('third_party_type', 'なし')}",
         f"**名前・肩書き**: {info.get('third_party_name', '')}",
         f"**裏付けポイント**: {info.get('third_party_points', '')}",
+        "",
+        "## 販売フロー",
+    ]
+
+    sales_flow = info.get("sales_flow_type", "直接販売型")
+    lines.append(f"**販売フロータイプ**: {sales_flow}")
+    if sales_flow == "直接販売型":
+        start_day = info.get("sales_start_day", "翌日（1日後）")
+        lines.append(f"**販売スタート日**: {start_day}")
+        lines.append(f"クロージングでは、{start_day}から販売を開始することを明示し、視聴者に行動を促す緊迫感を持たせてください。")
+    else:
+        method = info.get("consultation_method", "").strip()
+        if method:
+            lines.append(f"**誘導先**: {method}")
+        lines.append("クロージングでは商品への直接誘導ではなく、個別面談・相談への申し込みを促してください。「まずは無料で話しましょう」「個別でご相談ください」のようなトーンで、個別接触後に販売につなげる流れで台本を構成してください。")
+
+    lines += [
         "",
         "## 価格・オファー",
         f"**定価**: {info.get('regular_price', '')}",
@@ -682,6 +700,46 @@ with st.form("product_form"):
 
     st.divider()
 
+    # 販売フロー
+    st.subheader("販売フロー")
+    sales_flow_type = st.radio(
+        "販売フロータイプを選択",
+        ["直接販売型", "面談・相談誘導型"],
+        captions=[
+            "ローンチ動画から直接購入ページへ誘導して販売する",
+            "個別Zoom面談・LINE相談などに誘導し、個別接触後に販売する",
+        ],
+        horizontal=True,
+        key="f_sales_flow_type",
+    )
+    col_sf1, col_sf2 = st.columns(2)
+    with col_sf1:
+        sales_start_day = st.selectbox(
+            "販売スタート日（直接販売型）",
+            [
+                "当日（即時販売）",
+                "翌日（1日後）",
+                "翌々日（2日後）",
+                "3日後",
+                "4日後",
+                "5日後",
+                "7日後（1週間後）",
+                "その他（追加メモに記載）",
+            ],
+            index=1,
+            key="f_sales_start_day",
+            help="直接販売型を選択した場合に使用されます",
+        )
+    with col_sf2:
+        consultation_method = st.text_input(
+            "誘導先の詳細（面談・相談誘導型）",
+            placeholder="例：個別Zoom面談、LINE@で個別相談",
+            key="f_consultation_method",
+            help="面談・相談誘導型を選択した場合に使用されます",
+        )
+
+    st.divider()
+
     # 価格・オファー
     st.subheader("価格・オファー")
     col8, col9, col10 = st.columns(3)
@@ -862,6 +920,9 @@ if submitted:
         "use_episode_themes": use_episode_themes,
         "episode_themes": episode_themes,
         "notes": notes,
+        "sales_flow_type": sales_flow_type,
+        "sales_start_day": sales_start_day,
+        "consultation_method": consultation_method,
     }
     user_prompt = build_user_prompt(info)
     display_name = name if name else "台本"
