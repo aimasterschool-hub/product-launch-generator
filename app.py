@@ -314,11 +314,17 @@ def generate_slide_data(client, script):
 - 目標枚数は **{target_slides}枚以上**。台本が長ければさらに増やしてください
 - 1枚あたりのナレーション量は2〜4文程度が目安です
 
+## レイアウト指定（各スライドに必ず `layout` を指定してください）
+- `"impact"` ：重要なメッセージを画面中央に大きく表示。数字・キャッチコピー・価格・CTAに使う
+- `"section"` ：話題の切れ目・章タイトル用。タイトルを大きく中央に配置しセクション感を出す
+- `"standard"` ：タイトル＋箇条書きの標準レイアウト。説明・機能紹介・利用者の声などに使う
+
 ## 最終確認（出力前に必ず）
 - デザインが崩れていないか（タイトルと本文が重複していないか）
 - イメージ絵文字は台本内容とマッチしているか
 - 文字化けしそうな特殊文字が含まれていないか
 - スライド枚数が{target_slides}枚以上あるか
+- impact / section / standard をバランスよく使い分けているか
 
 ## 出力形式
 JSONのみ出力してください。説明文・コードブロック記号（```）は不要です。
@@ -327,8 +333,9 @@ JSONのみ出力してください。説明文・コードブロック記号（`
   "title": "動画タイトル",
   "slides": [
     {{
+      "layout": "impact",
       "title": "スライドタイトル（20文字以内）",
-      "content": ["箇条書き1（30文字以内）", "箇条書き2"],
+      "content": ["サブテキスト（impact/sectionは0〜2個、standardは最大4個）"],
       "emoji": "📈",
       "notes": "このスライドに対応する台本の該当部分（抜粋）"
     }}
@@ -420,21 +427,56 @@ def build_pptx(slide_data, design, pptx_size=(13.33, 7.5)):
         slide = prs.slides.add_slide(blank)
         set_bg(slide)
 
-        # 上部アクセントバー
-        add_rect(slide, 0, 0, W, 0.12, acc_rgb)
-
-        # タイトル
-        emoji = slide_info.get("emoji", "")
-        title_text = f"{emoji}  {slide_info.get('title', '')}" if emoji else slide_info.get("title", "")
-        add_textbox(slide, title_text, 0.4, 0.22, W - 0.8, 0.85, title_pt, title_rgb, bold=True)
-
-        # 区切り線
-        add_rect(slide, 0.4, 1.15, W - 0.8, 0.05, acc_rgb)
-
-        # 箇条書き
+        layout        = slide_info.get("layout", "standard")
+        emoji         = slide_info.get("emoji", "")
+        raw_title     = slide_info.get("title", "")
         content_items = slide_info.get("content", [])
-        if content_items:
-            add_bullets(slide, content_items, 0.5, 1.3, W - 1, H - 1.7, content_pt, cont_rgb)
+
+        if layout == "impact":
+            # ── インパクト：中央大テキスト ──
+            bw = 0.12
+            add_rect(slide, 0,     0,     W,  bw, acc_rgb)
+            add_rect(slide, 0,     H - bw, W, bw, acc_rgb)
+            add_rect(slide, 0,     0,     bw, H,  acc_rgb)
+            add_rect(slide, W - bw, 0,    bw, H,  acc_rgb)
+            if emoji:
+                add_textbox(slide, emoji, 0.4, 0.2, 1.2, 0.7, title_pt - 4, acc_rgb)
+            center_top = H * 0.28 if content_items else H * 0.35
+            add_textbox(slide, raw_title,
+                        0.5, center_top, W - 1, H * 0.38,
+                        title_pt + 10, title_rgb, bold=True, align=PP_ALIGN.CENTER)
+            if content_items:
+                sub = "  •  ".join(content_items[:2])
+                add_textbox(slide, sub,
+                            0.5, center_top + H * 0.4, W - 1, 0.9,
+                            content_pt + 2, cont_rgb, align=PP_ALIGN.CENTER)
+
+        elif layout == "section":
+            # ── セクション：左バー＋中央タイトル ──
+            add_rect(slide, 0, 0, 0.22, H, acc_rgb)
+            add_rect(slide, 0, 0, W, 0.1, acc_rgb)
+            add_rect(slide, 0, H - 0.12, W, 0.12, acc_rgb)
+            emoji_offset = 0.7 if emoji else 0
+            if emoji:
+                add_textbox(slide, emoji,
+                            W / 2 - 0.4, H / 2 - 1.1, 0.8, 0.7,
+                            title_pt + 4, acc_rgb, align=PP_ALIGN.CENTER)
+            add_textbox(slide, raw_title,
+                        0.5, H / 2 - 0.55 + emoji_offset, W - 1, 1.3,
+                        title_pt + 6, title_rgb, bold=True, align=PP_ALIGN.CENTER)
+            if content_items:
+                add_textbox(slide, content_items[0],
+                            0.5, H / 2 + 0.85 + emoji_offset, W - 1, 0.7,
+                            content_pt, cont_rgb, align=PP_ALIGN.CENTER)
+
+        else:
+            # ── standard：上バー＋左揃えタイトル＋箇条書き ──
+            add_rect(slide, 0, 0, W, 0.12, acc_rgb)
+            title_text = f"{emoji}  {raw_title}" if emoji else raw_title
+            add_textbox(slide, title_text, 0.4, 0.22, W - 0.8, 0.85, title_pt, title_rgb, bold=True)
+            add_rect(slide, 0.4, 1.15, W - 0.8, 0.05, acc_rgb)
+            if content_items:
+                add_bullets(slide, content_items, 0.5, 1.3, W - 1, H - 1.7, content_pt, cont_rgb)
 
         # スピーカーノート
         notes = slide_info.get("notes", "")
@@ -483,52 +525,93 @@ def wrap_text(text, font, max_width, draw):
 def build_png_slides(slide_data, design, png_size=(1920, 1080)):
     """slide_dataとdesignからPNG画像リストを生成する。"""
     W, H = png_size
-    bg  = hex_to_rgb(design["bg"])
-    tc  = hex_to_rgb(design["title"])
-    cc  = hex_to_rgb(design["content"])
-    ac  = hex_to_rgb(design["accent"])
+    bg_c = hex_to_rgb(design["bg"])
+    tc   = hex_to_rgb(design["title"])
+    cc   = hex_to_rgb(design["content"])
+    ac   = hex_to_rgb(design["accent"])
 
-    font_title_main = get_font(80)
-    font_title      = get_font(56)
-    font_content    = get_font(38)
+    telop_h = int(H * 0.22)   # 下部テロップスペース
+    area_h  = H - telop_h     # 描画有効エリア
+
+    # フォントキャッシュ（サイズ: ピクセル）
+    f96 = get_font(96)
+    f72 = get_font(72)
+    f56 = get_font(56)
+    f44 = get_font(44)
+    f38 = get_font(38)
+    f32 = get_font(30)
+
+    def draw_centered(draw, text, font, lh, center_y, max_w, color):
+        """テキストを折り返して中央揃えで描画し、描画終端y座標を返す。"""
+        lines = wrap_text(text, font, max_w, draw)
+        total = len(lines) * lh
+        y = center_y - total // 2
+        for line in lines:
+            draw.text((W // 2, y), line, font=font, fill=color, anchor="mt")
+            y += lh
+        return y
 
     images = []
 
-    # タイトルスライド
-    img = Image.new("RGB", (W, H), bg)
+    # ── タイトルスライド ──
+    img = Image.new("RGB", (W, H), bg_c)
     draw = ImageDraw.Draw(img)
-    draw.rectangle([0, H//2 - 6, W, H//2 + 6], fill=ac)
-    title_text = slide_data.get("title", "")
-    draw.text((W // 2, H // 2 - 60), title_text, font=font_title_main, fill=tc, anchor="mm")
+    draw.rectangle([0, area_h // 2 - 8, W, area_h // 2 + 8], fill=ac)
+    draw_centered(draw, slide_data.get("title", ""), f72, 88, area_h // 2 - 80, W - 160, tc)
     images.append(img)
 
-    # コンテンツスライド
     for slide_info in slide_data.get("slides", []):
-        img = Image.new("RGB", (W, H), bg)
+        layout  = slide_info.get("layout", "standard")
+        emoji   = slide_info.get("emoji", "")
+        title   = slide_info.get("title", "")
+        content = slide_info.get("content", [])
+
+        img = Image.new("RGB", (W, H), bg_c)
         draw = ImageDraw.Draw(img)
 
-        # アクセントバー（上部）
-        draw.rectangle([0, 0, W, 14], fill=ac)
+        if layout == "impact":
+            # ── インパクト：中央に大きくタイトル ──
+            bw = 14
+            draw.rectangle([0, 0, W - 1, area_h - 1], outline=ac, width=bw)
+            if emoji:
+                draw.text((70, 55), emoji, font=f56, fill=ac)
+            has_content = bool(content)
+            center_y = area_h // 2 - (50 if has_content else 0)
+            bottom_y = draw_centered(draw, title, f72, 90, center_y, W - 200, tc)
+            if has_content:
+                for item in content[:2]:
+                    draw.text((W // 2, bottom_y + 14), item, font=f38, fill=cc, anchor="mt")
+                    bottom_y += 54
 
-        # タイトル（絵文字付き）
-        emoji = slide_info.get("emoji", "")
-        title_text = f"{emoji}  {slide_info.get('title', '')}" if emoji else slide_info.get("title", "")
-        draw.text((80, 60), title_text, font=font_title, fill=tc)
+        elif layout == "section":
+            # ── セクション：左サイドバー＋中央タイトル ──
+            draw.rectangle([0, 0, 20, H], fill=ac)
+            draw.rectangle([0, 0, W, 12], fill=ac)
+            draw.rectangle([0, area_h - 12, W, area_h], fill=ac)
+            emoji_offset = 0
+            if emoji:
+                draw.text((W // 2, area_h // 2 - 110), emoji, font=f72, fill=ac, anchor="mm")
+                emoji_offset = 80
+            draw_centered(draw, title, f56, 70, area_h // 2 + emoji_offset, W - 120, tc)
+            if content:
+                draw.text((W // 2, area_h // 2 + emoji_offset + 100),
+                          content[0], font=f32, fill=cc, anchor="mt")
 
-        # 区切り線
-        draw.rectangle([80, 160, W - 80, 168], fill=ac)
-
-        # 箇条書き（下部20%はテロップスペースとして空ける）
-        max_y = int(H * 0.78)
-        y = 210
-        for item in slide_info.get("content", []):
-            wrapped = wrap_text(f"  •  {item}", font_content, W - 200, draw)
-            for line in wrapped:
-                if y + 58 > max_y:
-                    break
-                draw.text((100, y), line, font=font_content, fill=cc)
-                y += 58
-            y += 10
+        else:
+            # ── standard：上バー＋左揃えタイトル＋箇条書き ──
+            draw.rectangle([0, 0, W, 14], fill=ac)
+            title_with_emoji = f"{emoji}  {title}" if emoji else title
+            draw.text((80, 55), title_with_emoji, font=f56, fill=tc)
+            draw.rectangle([80, 158, W - 80, 166], fill=ac)
+            y = 205
+            for item in content:
+                wrapped = wrap_text(f"  •  {item}", f38, W - 200, draw)
+                for line in wrapped:
+                    if y + 54 > area_h:
+                        break
+                    draw.text((100, y), line, font=f38, fill=cc)
+                    y += 54
+                y += 10
 
         images.append(img)
 
