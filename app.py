@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 import os
+import re
+import json
 import subprocess
+from io import BytesIO
 import streamlit as st
 from pathlib import Path
 from datetime import datetime
 import anthropic
 from tavily import TavilyClient
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dpi import Emu
+from pptx.enum.text import PP_ALIGN
 
 SAMPLES_DIR = Path("samples")
 OUTPUT_DIR = Path("output")
@@ -205,6 +212,85 @@ def search_trends(tavily_api_key, category, product_name):
         return "\n".join(summaries) if summaries else ""
     except Exception:
         return ""
+
+
+def generate_slide_data(client, script):
+    """Claudeに台本を渡してスライド構成をJSON形式で生成する。"""
+    prompt = f"""以下の台本をYouTube横動画用のスライド構成に変換してください。
+
+## 台本
+{script}
+
+## 出力ルール
+- JSONのみ出力。前後の説明文・コードブロック記号は不要。
+- 1スライドの箇条書きは最大4つ
+- タイトルは20文字以内
+- スライド枚数は台本の長さに応じて適切に（最小5枚）
+
+## JSON形式
+{{
+  "title": "動画タイトル",
+  "slides": [
+    {{
+      "title": "スライドタイトル",
+      "content": ["箇条書き1", "箇条書き2"],
+      "notes": "このスライドに対応するナレーション"
+    }}
+  ]
+}}"""
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=8192,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    text = response.content[0].text
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if not match:
+        raise ValueError("スライドデータの生成に失敗しました")
+    return json.loads(match.group())
+
+
+def build_pptx(slide_data):
+    """slide_dataからPPTXバイナリを生成して返す。"""
+    prs = Presentation()
+    prs.slide_width = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+
+    # タイトルスライド
+    title_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_layout)
+    slide.shapes.title.text = slide_data.get("title", "")
+    if slide.placeholders[1]:
+        slide.placeholders[1].text = ""
+
+    # コンテンツスライド
+    content_layout = prs.slide_layouts[1]
+    for slide_info in slide_data.get("slides", []):
+        slide = prs.slides.add_slide(content_layout)
+
+        # タイトル
+        slide.shapes.title.text = slide_info.get("title", "")
+        slide.shapes.title.text_frame.paragraphs[0].font.size = Pt(32)
+
+        # 箇条書き
+        body = slide.placeholders[1]
+        tf = body.text_frame
+        tf.clear()
+        for i, item in enumerate(slide_info.get("content", [])):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.text = item
+            p.font.size = Pt(24)
+
+        # スピーカーノート
+        notes = slide_info.get("notes", "")
+        if notes:
+            slide.notes_slide.notes_text_frame.text = notes
+
+    output = BytesIO()
+    prs.save(output)
+    output.seek(0)
+    return output.getvalue()
 
 
 def save_script(script, product_name):
@@ -568,7 +654,6 @@ if "current_script" in st.session_state:
                 client = anthropic.Anthropic(api_key=api_key)
                 display_name = st.session_state.display_name
 
-                # 会話履歴に現在の台本とアシスタントの返答を追加
                 messages = st.session_state.current_messages + [
                     {"role": "assistant", "content": st.session_state.current_script},
                     {"role": "user", "content": f"以下の修正指示に従って台本を修正してください：\n\n{edit_instruction}"},
@@ -577,7 +662,6 @@ if "current_script" in st.session_state:
                 st.subheader("修正結果")
                 script, stats = run_generation(client, st.session_state.system_blocks, messages, display_name)
 
-                # 最新の台本に更新
                 st.session_state.current_script = script
                 st.session_state.current_messages = messages
 
@@ -585,3 +669,32 @@ if "current_script" in st.session_state:
 
             except anthropic.APIError as e:
                 st.error(f"APIエラー: {e}")
+
+    # ── スライド生成 ──────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("スライド作成")
+    st.caption("台本が完成したらYouTube横動画用のPowerPointスライドを自動生成します（16:9）")
+
+    if st.button("スライドを作成する", use_container_width=True):
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            with st.spinner("スライド構成を生成中..."):
+                slide_data = generate_slide_data(client, st.session_state.current_script)
+
+            slide_count = len(slide_data.get("slides", []))
+            st.success(f"{slide_count} 枚のスライドを生成しました")
+
+            with st.spinner("PowerPointファイルを作成中..."):
+                pptx_bytes = build_pptx(slide_data)
+
+            display_name = st.session_state.display_name
+            st.download_button(
+                "スライドをダウンロード (.pptx)",
+                data=pptx_bytes,
+                file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name}_slides.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+            )
+
+        except Exception as e:
+            st.error(f"スライド生成エラー: {e}")
