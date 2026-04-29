@@ -29,6 +29,35 @@ SLIDE_FORMATS = {
 }
 
 SAMPLES_DIR = Path("samples")
+
+PRESET_SIMPLE_KEYS = [
+    "structure_type", "include_knowhow", "knowhow_theme", "knowhow_notes",
+    "name", "category", "seller_name", "seller_profile",
+    "interviewer_name", "interviewer_profile", "seller_authority",
+    "catchcopy", "target_audience", "result1", "result2",
+    "monthly_return", "ease_of_start",
+    "voice1", "voice2", "voice3",
+    "pain_points", "why_now",
+    "third_party_type", "third_party_name", "third_party_points",
+    "regular_price", "special_price", "limited_time", "limited_seats",
+    "installment", "bonuses",
+    "episode_structure", "closing_strength", "video_duration", "notes",
+]
+
+
+def load_preset_to_session(preset):
+    for k in PRESET_SIMPLE_KEYS:
+        if k in preset:
+            st.session_state[f"f_{k}"] = preset[k]
+    for i, v in enumerate(preset.get("strengths", ["", "", "", ""])):
+        st.session_state[f"str_{i}"] = v
+    voices = preset.get("voices", ["", "", ""])
+    for i in range(3):
+        st.session_state[f"f_voice{i+1}"] = voices[i] if i < len(voices) else ""
+    for i, v in enumerate(preset.get("comment_includes", [True]*5)):
+        st.session_state[f"comment_include_{i}"] = v
+    for i, v in enumerate(preset.get("comment_prompts", [""]*5)):
+        st.session_state[f"comment_{i}"] = v
 OUTPUT_DIR = Path("output")
 MODEL = "claude-opus-4-7"
 
@@ -461,6 +490,54 @@ with st.sidebar:
     if st.button("再読み込み", use_container_width=True):
         st.rerun()
 
+    st.divider()
+    st.header("プリセット管理")
+
+    saved_presets = st.session_state.get("saved_presets", {})
+
+    # 呼び出し
+    if saved_presets:
+        sel = st.selectbox("保存済みプリセット", ["── 選択 ──"] + list(saved_presets.keys()), key="preset_select")
+        col_load, col_del = st.columns(2)
+        with col_load:
+            if st.button("呼び出す", use_container_width=True):
+                if sel != "── 選択 ──":
+                    load_preset_to_session(saved_presets[sel])
+                    st.success(f"「{sel}」を読み込みました")
+                    st.rerun()
+        with col_del:
+            if st.button("削除", use_container_width=True):
+                if sel != "── 選択 ──":
+                    del st.session_state["saved_presets"][sel]
+                    st.rerun()
+    else:
+        st.caption("保存済みプリセットはありません")
+
+    # JSONインポート
+    st.caption("JSONファイルから読み込む")
+    uploaded = st.file_uploader("インポート", type=["json"], label_visibility="collapsed")
+    if uploaded:
+        try:
+            data = json.loads(uploaded.read())
+            if "saved_presets" not in st.session_state:
+                st.session_state["saved_presets"] = {}
+            st.session_state["saved_presets"].update(data)
+            st.success("インポートしました")
+            st.rerun()
+        except Exception:
+            st.error("JSONの読み込みに失敗しました")
+
+    # JSONエクスポート
+    if saved_presets:
+        export_json = json.dumps(saved_presets, ensure_ascii=False, indent=2)
+        st.download_button(
+            "プリセットをエクスポート (.json)",
+            data=export_json.encode("utf-8"),
+            file_name="presets.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
 if "system_blocks" not in st.session_state or st.session_state.get("samples_count") != len(samples):
     st.session_state.system_blocks = build_system_prompt(samples)
     st.session_state.samples_count = len(samples)
@@ -479,25 +556,28 @@ with st.form("product_form"):
             "無料ノウハウ・セミナー形式で価値提供→「時間・リスクが心配な方はこちら」と商品販売に自然につなぐ。",
         ],
         horizontal=True,
+        key="f_structure_type",
     )
 
     st.divider()
 
     # フロントエンド型ノウハウパート
     st.subheader("フロントエンド型ノウハウパート")
-    include_knowhow = st.checkbox("ノウハウパートを含める", value=False)
+    include_knowhow = st.checkbox("ノウハウパートを含める", value=False, key="f_include_knowhow")
     st.caption("オンにすると、指定テーマのノウハウ・価値提供コンテンツを台本に自動で組み込みます")
     col_kh1, col_kh2 = st.columns(2)
     with col_kh1:
         knowhow_theme = st.text_input(
             "ノウハウのテーマ / キーワード",
-            placeholder="例：FXスキャルピング、副業で稼ぐ方法、仮想通貨の始め方"
+            placeholder="例：FXスキャルピング、副業で稼ぐ方法、仮想通貨の始め方",
+            key="f_knowhow_theme",
         )
     with col_kh2:
         knowhow_notes = st.text_area(
             "ノウハウの補足メモ（任意）",
             placeholder="例：初心者向けに5分足を使った手法を説明したい、具体的なエントリーポイントを入れてほしい",
-            height=80
+            height=80,
+            key="f_knowhow_notes",
         )
 
     st.divider()
@@ -506,35 +586,36 @@ with st.form("product_form"):
     st.subheader("商品・基本情報")
     col1, col2 = st.columns(2)
     with col1:
-        name = st.text_input("商品名", placeholder="例：スマートイット")
+        name = st.text_input("商品名", placeholder="例：スマートイット", key="f_name")
         category = st.selectbox("ジャンル", [
             "FX・為替投資", "株式投資・トレード", "仮想通貨・Web3",
             "副業・ビジネス", "美容・スキンケア", "健康・ダイエット",
             "教育・スキルアップ", "テック・SaaS", "食品・サプリ", "その他"
-        ])
-        seller_name = st.text_input("販売者名", placeholder="例：はたけ")
+        ], key="f_category")
+        seller_name = st.text_input("販売者名", placeholder="例：はたけ", key="f_seller_name")
         seller_profile = st.text_area(
             "販売者のプロフィール",
             placeholder="例：元会社員で副業からFXを始め、3年で脱サラ。現在はFX系YouTuberとして活動中。フォロワー10万人。",
-            height=80
+            height=80, key="f_seller_profile",
         )
         interviewer_name = st.text_input(
             "インタビュアー名（空欄で一人語り形式）",
-            placeholder="例：ふじき　　※空欄→モノローグ形式"
+            placeholder="例：ふじき　　※空欄→モノローグ形式",
+            key="f_interviewer_name",
         )
         interviewer_profile = st.text_area(
             "インタビュアーのプロフィール（任意）",
             placeholder="例：元銀行員、現在は投資系メディアのライター。読者目線で質問するのが得意。",
-            height=80
+            height=80, key="f_interviewer_profile",
         )
-        seller_authority = st.text_input("販売者の権威・実績", placeholder="例：FX系YouTuber、動画1500本以上、5年以上活動")
+        seller_authority = st.text_input("販売者の権威・実績", placeholder="例：FX系YouTuber、動画1500本以上、5年以上活動", key="f_seller_authority")
     with col2:
-        catchcopy = st.text_input("キャッチコピー", placeholder="例：月5分で月10万円")
-        target_audience = st.text_input("ターゲット層", placeholder="例：投資初心者、副業したい人")
-        result1 = st.text_input("実績数値①", placeholder="例：3ヶ月で31万円の利益")
-        result2 = st.text_input("実績数値②", placeholder="例：1年で125万円の利益")
-        monthly_return = st.text_input("月利 / 月収目安", placeholder="例：月利10%、月10万円")
-        ease_of_start = st.text_input("始めやすさの根拠", placeholder="例：2万円から、スマホだけでOK")
+        catchcopy = st.text_input("キャッチコピー", placeholder="例：月5分で月10万円", key="f_catchcopy")
+        target_audience = st.text_input("ターゲット層", placeholder="例：投資初心者、副業したい人", key="f_target_audience")
+        result1 = st.text_input("実績数値①", placeholder="例：3ヶ月で31万円の利益", key="f_result1")
+        result2 = st.text_input("実績数値②", placeholder="例：1年で125万円の利益", key="f_result2")
+        monthly_return = st.text_input("月利 / 月収目安", placeholder="例：月利10%、月10万円", key="f_monthly_return")
+        ease_of_start = st.text_input("始めやすさの根拠", placeholder="例：2万円から、スマホだけでOK", key="f_ease_of_start")
 
     st.markdown("**商品の強み**（入力した分だけ使用）")
     s_cols = st.columns(4)
@@ -554,9 +635,9 @@ with st.form("product_form"):
     # 利用者の声
     st.subheader("利用者の声（喜びの声）")
     st.caption("名前・属性と声のセットで入力してください")
-    voice1 = st.text_input("声①", placeholder="例：30代会社員Aさん：導入1ヶ月で8万円の利益が出ました！初心者でも全く問題なかったです。")
-    voice2 = st.text_input("声②", placeholder="例：40代主婦Bさん：スマホだけで設定できて、今は毎月安定して収入が入っています。")
-    voice3 = st.text_input("声③", placeholder="例：20代フリーランスCさん：他のシステムで失敗したけどこれは違いました。")
+    voice1 = st.text_input("声①", placeholder="例：30代会社員Aさん：導入1ヶ月で8万円の利益が出ました！初心者でも全く問題なかったです。", key="f_voice1")
+    voice2 = st.text_input("声②", placeholder="例：40代主婦Bさん：スマホだけで設定できて、今は毎月安定して収入が入っています。", key="f_voice2")
+    voice3 = st.text_input("声③", placeholder="例：20代フリーランスCさん：他のシステムで失敗したけどこれは違いました。", key="f_voice3")
 
     st.divider()
 
@@ -564,9 +645,9 @@ with st.form("product_form"):
     st.subheader("社会背景・痛み訴求")
     col3, col4 = st.columns(2)
     with col3:
-        pain_points = st.text_area("視聴者のペイン", placeholder="例：残業しても給料が上がらない、将来が不安、副業する時間がない", height=100)
+        pain_points = st.text_area("視聴者のペイン", placeholder="例：残業しても給料が上がらない、将来が不安、副業する時間がない", height=100, key="f_pain_points")
     with col4:
-        why_now = st.text_area("なぜ今必要か（why now）", placeholder="例：物価は上がるのに賃金は上がらない。自分で資産を作るしかない。", height=100)
+        why_now = st.text_area("なぜ今必要か（why now）", placeholder="例：物価は上がるのに賃金は上がらない。自分で資産を作るしかない。", height=100, key="f_why_now")
 
     st.divider()
 
@@ -574,11 +655,11 @@ with st.form("product_form"):
     st.subheader("第三者・信頼性")
     col5, col6, col7 = st.columns(3)
     with col5:
-        third_party_type = st.selectbox("第三者の種類", ["なし", "開発者・専門家", "ユーザー・実践者", "有識者・研究者", "著名人・インフルエンサー"])
+        third_party_type = st.selectbox("第三者の種類", ["なし", "開発者・専門家", "ユーザー・実践者", "有識者・研究者", "著名人・インフルエンサー"], key="f_third_party_type")
     with col6:
-        third_party_name = st.text_input("名前・肩書き", placeholder="例：桑田（システム開発者）")
+        third_party_name = st.text_input("名前・肩書き", placeholder="例：桑田（システム開発者）", key="f_third_party_name")
     with col7:
-        third_party_points = st.text_input("第三者の裏付けポイント", placeholder="例：2万通りのロジックを検証、14歳からシステム開発")
+        third_party_points = st.text_input("第三者の裏付けポイント", placeholder="例：2万通りのロジックを検証、14歳からシステム開発", key="f_third_party_points")
 
     st.divider()
 
@@ -586,14 +667,14 @@ with st.form("product_form"):
     st.subheader("価格・オファー")
     col8, col9, col10 = st.columns(3)
     with col8:
-        regular_price = st.text_input("定価", placeholder="例：158,000円")
-        special_price = st.text_input("特別価格", placeholder="例：98,000円")
+        regular_price = st.text_input("定価", placeholder="例：158,000円", key="f_regular_price")
+        special_price = st.text_input("特別価格", placeholder="例：98,000円", key="f_special_price")
     with col9:
-        limited_time = st.text_input("期間限定条件", placeholder="例：3日間限定")
-        limited_seats = st.text_input("先着・定員制限（任意）", placeholder="例：先着50名様、定員30名")
-        installment = st.selectbox("分割対応", ["なし", "あり"])
+        limited_time = st.text_input("期間限定条件", placeholder="例：3日間限定", key="f_limited_time")
+        limited_seats = st.text_input("先着・定員制限（任意）", placeholder="例：先着50名様、定員30名", key="f_limited_seats")
+        installment = st.selectbox("分割対応", ["なし", "あり"], key="f_installment")
     with col10:
-        bonuses = st.text_area("特典内容（カンマ区切り）", placeholder="例：導入マニュアル、トレーダー手法、キャッシュを増やす方法", height=100)
+        bonuses = st.text_area("特典内容（カンマ区切り）", placeholder="例：導入マニュアル、トレーダー手法、キャッシュを増やす方法", height=100, key="f_bonuses")
 
     st.divider()
 
@@ -624,10 +705,10 @@ with st.form("product_form"):
     with col11:
         episode_structure = st.selectbox("話数構成", [
             "1話完結", "2話構成（前編・後編）", "3話構成", "4話構成", "5話構成"
-        ])
+        ], key="f_episode_structure")
         closing_strength = st.selectbox("クロージングの強度", [
             "真摯・控えめ（押し付けない）", "標準（バランス型）", "強め（urgency高め）", "最強（限定・希少性全開）"
-        ])
+        ], key="f_closing_strength")
         video_duration = st.selectbox("1話あたりの動画の長さ", [
             "3分（約900文字）",
             "5分（約1,500文字）",
@@ -640,9 +721,9 @@ with st.form("product_form"):
             "60分（約18,000文字）",
             "90分（約27,000文字）",
             "120分（約36,000文字）",
-        ], index=2)
+        ], index=2, key="f_video_duration")
     with col12:
-        notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100)
+        notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100, key="f_notes")
 
     use_trend_search = st.checkbox(
         "最新トレンドをWeb検索して台本に反映する",
@@ -772,8 +853,24 @@ if submitted:
         st.session_state.current_script = script
         st.session_state.current_messages = messages
         st.session_state.display_name = display_name
+        st.session_state.last_info = info
 
         show_download(script, display_name, stats)
+
+        # プリセット保存
+        st.divider()
+        st.subheader("この入力内容を保存する")
+        col_pn, col_pb = st.columns([3, 1])
+        with col_pn:
+            preset_name = st.text_input("プリセット名", placeholder="例：スマートイット用、FX商品A用", key="preset_save_name")
+        with col_pb:
+            st.write("")
+            if st.button("保存する", use_container_width=True, key="save_preset_btn"):
+                if preset_name:
+                    if "saved_presets" not in st.session_state:
+                        st.session_state["saved_presets"] = {}
+                    st.session_state["saved_presets"][preset_name] = info
+                    st.success(f"「{preset_name}」を保存しました。左のサイドバーから呼び出せます。")
 
     except anthropic.APIError as e:
         st.error(f"APIエラー: {e}")
