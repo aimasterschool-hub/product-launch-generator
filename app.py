@@ -5,6 +5,7 @@ import streamlit as st
 from pathlib import Path
 from datetime import datetime
 import anthropic
+from tavily import TavilyClient
 
 SAMPLES_DIR = Path("samples")
 OUTPUT_DIR = Path("output")
@@ -150,6 +151,22 @@ def build_user_prompt(info):
     return "\n".join(lines)
 
 
+def search_trends(tavily_api_key, category, product_name):
+    """カテゴリと商品名に関連する最新トレンドをWeb検索して返す。"""
+    try:
+        client = TavilyClient(api_key=tavily_api_key)
+        query = f"{category} {product_name} 最新トレンド 2025 日本"
+        results = client.search(query=query, max_results=3, search_depth="basic")
+        summaries = []
+        for r in results.get("results", []):
+            title = r.get("title", "")
+            content = r.get("content", "")[:300]
+            summaries.append(f"・{title}：{content}")
+        return "\n".join(summaries) if summaries else ""
+    except Exception:
+        return ""
+
+
 def save_script(script, product_name):
     OUTPUT_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -170,6 +187,8 @@ if not api_key:
     if not api_key:
         st.warning("APIキーを入力してください")
         st.stop()
+
+tavily_api_key = os.environ.get("TAVILY_API_KEY", "")
 
 with st.sidebar:
     st.header("サンプル台本")
@@ -312,6 +331,13 @@ with st.form("product_form"):
     with col12:
         notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100)
 
+    use_trend_search = st.checkbox(
+        "最新トレンドをWeb検索して台本に反映する",
+        value=False,
+        disabled=not tavily_api_key,
+        help="TavilyのAPIキーが設定されている場合に利用できます",
+    )
+
     submitted = st.form_submit_button("台本を生成する", type="primary", use_container_width=True)
 
 # ── 生成処理 ──────────────────────────────────────────────────────────────────
@@ -383,6 +409,14 @@ if submitted:
     }
     user_prompt = build_user_prompt(info)
     display_name = name if name else "台本"
+
+    # トレンド検索
+    if use_trend_search and tavily_api_key:
+        with st.spinner("最新トレンドを検索中..."):
+            trends = search_trends(tavily_api_key, info.get("category", ""), info.get("name", ""))
+        if trends:
+            user_prompt += f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n上記のトレンド情報も台本に自然に盛り込んでください。"
+            st.info("最新トレンドを取得しました。台本に反映します。")
 
     st.divider()
     st.subheader("生成結果")
