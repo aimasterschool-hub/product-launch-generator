@@ -479,19 +479,13 @@ if not api_key:
 tavily_api_key = os.environ.get("TAVILY_API_KEY", "")
 
 with st.sidebar:
-    st.header("サンプル台本")
-    samples = load_samples()
-    if samples:
-        st.success(f"{len(samples)} 件読み込み済み")
-        for s in samples:
-            st.text(f"• {s['filename']}")
-    else:
-        st.warning("samplesフォルダにファイルがありません")
-    if st.button("再読み込み", use_container_width=True):
-        st.rerun()
-
-    st.divider()
     st.header("プリセット管理")
+    st.caption("""
+**使い方**
+- **保存**：台本生成後に下部の「この入力内容を保存する」でプリセット名をつけて保存
+- **呼び出し**：下のリストから選んで「呼び出す」をクリック
+- **エクスポート/インポート**：JSONファイルで他のPCへの持ち出しや共有が可能
+""")
 
     saved_presets = st.session_state.get("saved_presets", {})
 
@@ -537,6 +531,18 @@ with st.sidebar:
             mime="application/json",
             use_container_width=True,
         )
+
+    st.divider()
+    st.header("サンプル台本")
+    samples = load_samples()
+    if samples:
+        st.success(f"{len(samples)} 件読み込み済み")
+        for s in samples:
+            st.text(f"• {s['filename']}")
+    else:
+        st.warning("samplesフォルダにファイルがありません")
+    if st.button("再読み込み", use_container_width=True):
+        st.rerun()
 
 if "system_blocks" not in st.session_state or st.session_state.get("samples_count") != len(samples):
     st.session_state.system_blocks = build_system_prompt(samples)
