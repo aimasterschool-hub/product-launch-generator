@@ -12,6 +12,8 @@ import anthropic
 from tavily import TavilyClient
 from pptx import Presentation
 from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 from PIL import Image, ImageDraw, ImageFont
 
 DESIGN_PRESETS = {
@@ -342,38 +344,94 @@ def generate_slide_data(client, script):
     return json.loads(match.group())
 
 
-def build_pptx(slide_data, pptx_size=(13.33, 7.5)):
-    """slide_dataからPPTXバイナリを生成して返す。"""
+def build_pptx(slide_data, design, pptx_size=(13.33, 7.5)):
+    """slide_dataとdesignからデザイン適用済みPPTXバイナリを生成して返す。"""
+    W, H = pptx_size
+
     prs = Presentation()
-    prs.slide_width  = Inches(pptx_size[0])
-    prs.slide_height = Inches(pptx_size[1])
+    prs.slide_width  = Inches(W)
+    prs.slide_height = Inches(H)
 
-    # タイトルスライド
-    title_layout = prs.slide_layouts[0]
-    slide = prs.slides.add_slide(title_layout)
-    slide.shapes.title.text = slide_data.get("title", "")
-    if slide.placeholders[1]:
-        slide.placeholders[1].text = ""
+    blank = prs.slide_layouts[6]  # 完全ブランクレイアウト
 
-    # コンテンツスライド
-    content_layout = prs.slide_layouts[1]
+    def _rgb(hex_color):
+        h = hex_color.lstrip("#")
+        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    bg_rgb    = _rgb(design["bg"])
+    title_rgb = _rgb(design["title"])
+    cont_rgb  = _rgb(design["content"])
+    acc_rgb   = _rgb(design["accent"])
+
+    def set_bg(slide):
+        fill = slide.background.fill
+        fill.solid()
+        fill.fore_color.rgb = bg_rgb
+
+    def add_rect(slide, left, top, width, height, color):
+        shape = slide.shapes.add_shape(1, Inches(left), Inches(top), Inches(width), Inches(height))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = color
+        shape.line.fill.background()
+        return shape
+
+    def add_textbox(slide, text, left, top, width, height, font_size, color, bold=False, align=PP_ALIGN.LEFT):
+        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = align
+        run = p.add_run()
+        run.text = text
+        run.font.size = Pt(font_size)
+        run.font.color.rgb = color
+        run.font.bold = bold
+
+    def add_bullets(slide, items, left, top, width, height, font_size, color):
+        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        for i, item in enumerate(items):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            run = p.add_run()
+            run.text = f"  •  {item}"
+            run.font.size = Pt(font_size)
+            run.font.color.rgb = color
+
+    # 縦型か横型かでフォントサイズを調整
+    landscape = W > H
+    title_main_pt = 40 if landscape else 32
+    title_pt      = 28 if landscape else 22
+    content_pt    = 20 if landscape else 17
+
+    # ── タイトルスライド ──
+    slide = prs.slides.add_slide(blank)
+    set_bg(slide)
+    add_rect(slide, 0, H / 2 - 0.06, W, 0.12, acc_rgb)
+    add_textbox(slide, slide_data.get("title", ""),
+                0.5, H / 2 - 1.3, W - 1, 1.1,
+                title_main_pt, title_rgb, bold=True, align=PP_ALIGN.CENTER)
+
+    # ── コンテンツスライド ──
     for slide_info in slide_data.get("slides", []):
-        slide = prs.slides.add_slide(content_layout)
+        slide = prs.slides.add_slide(blank)
+        set_bg(slide)
 
-        # タイトル（絵文字付き）
+        # 上部アクセントバー
+        add_rect(slide, 0, 0, W, 0.12, acc_rgb)
+
+        # タイトル
         emoji = slide_info.get("emoji", "")
         title_text = f"{emoji}  {slide_info.get('title', '')}" if emoji else slide_info.get("title", "")
-        slide.shapes.title.text = title_text
-        slide.shapes.title.text_frame.paragraphs[0].font.size = Pt(32)
+        add_textbox(slide, title_text, 0.4, 0.22, W - 0.8, 0.85, title_pt, title_rgb, bold=True)
+
+        # 区切り線
+        add_rect(slide, 0.4, 1.15, W - 0.8, 0.05, acc_rgb)
 
         # 箇条書き
-        body = slide.placeholders[1]
-        tf = body.text_frame
-        tf.clear()
-        for i, item in enumerate(slide_info.get("content", [])):
-            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.text = item
-            p.font.size = Pt(24)
+        content_items = slide_info.get("content", [])
+        if content_items:
+            add_bullets(slide, content_items, 0.5, 1.3, W - 1, H - 1.7, content_pt, cont_rgb)
 
         # スピーカーノート
         notes = slide_info.get("notes", "")
@@ -1061,7 +1119,7 @@ if "current_script" in st.session_state:
 
             if "PPT (.pptx)" in output_formats:
                 with st.spinner("PPTXを作成中..."):
-                    pptx_bytes = build_pptx(slide_data, fmt["pptx"])
+                    pptx_bytes = build_pptx(slide_data, design, fmt["pptx"])
                 st.download_button(
                     "PPTをダウンロード (.pptx)",
                     data=pptx_bytes,
@@ -1138,7 +1196,7 @@ if "current_script" in st.session_state:
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                     if "PPT (.pptx)" in output_formats:
-                        pptx_bytes = build_pptx(slide_data, fmt["pptx"])
+                        pptx_bytes = build_pptx(slide_data, design, fmt["pptx"])
                         st.download_button(
                             "修正済みPPTをダウンロード (.pptx)",
                             data=pptx_bytes,
