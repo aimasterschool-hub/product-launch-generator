@@ -601,12 +601,18 @@ def build_png_slides(slide_data, design, png_size=(1920, 1080)):
                           content[0], font=f32, fill=cc, anchor="mt")
 
         else:
-            # ── standard：上バー＋左揃えタイトル＋箇条書き ──
+            # ── standard：上バー＋左揃えタイトル（折り返し対応）＋箇条書き ──
             draw.rectangle([0, 0, W, 14], fill=ac)
             title_with_emoji = f"{emoji}  {title}" if emoji else title
-            draw.text((80, 55), title_with_emoji, font=f56, fill=tc)
-            draw.rectangle([80, 158, W - 80, 166], fill=ac)
-            y = 205
+            title_lines = wrap_text(title_with_emoji, f56, W - 160, draw)
+            title_lh = 68
+            y_t = 46
+            for line in title_lines:
+                draw.text((80, y_t), line, font=f56, fill=tc)
+                y_t += title_lh
+            sep_y = y_t + 10
+            draw.rectangle([80, sep_y, W - 80, sep_y + 6], fill=ac)
+            y = sep_y + 22
             for item in content:
                 wrapped = wrap_text(f"  •  {item}", f38, W - 200, draw)
                 for line in wrapped:
@@ -1251,21 +1257,25 @@ if "current_script" in st.session_state:
         _count   = len(_sd.get("slides", []))
 
         if not st.session_state.get("slide_approved"):
-            # ── プレビュー表示 ──
-            st.info(f"合計 **{_count} 枚**のスライドを生成しました。最初の数枚をプレビュー表示します。")
+            # ── 全スライドプレビュー（サムネイル一覧）──
+            st.info(f"全 **{_count} 枚**を確認してから出力してください。文字ズレや内容がおかしいスライドがないか確認してください。")
 
             orig_w, orig_h = _fmt["png"]
-            prev_size = (orig_w // 3, orig_h // 3)
-            prev_data = {"title": _sd["title"], "slides": _sd["slides"][:2]}
-            prev_imgs = build_png_slides(prev_data, _design, prev_size)
+            prev_size = (orig_w // 4, orig_h // 4)
 
-            n_cols = min(len(prev_imgs), 3)
+            with st.spinner(f"全スライドのプレビューを生成中（{_count} 枚）..."):
+                prev_imgs = build_png_slides(_sd, _design, prev_size)
+
+            n_cols = 4
             labels = ["タイトル"] + [f"スライド {i+1}" for i in range(len(prev_imgs) - 1)]
-            for col, img, label in zip(st.columns(n_cols), prev_imgs, labels):
-                col.image(img, caption=label, use_container_width=True)
+            for row_start in range(0, len(prev_imgs), n_cols):
+                row = prev_imgs[row_start:row_start + n_cols]
+                row_labels = labels[row_start:row_start + n_cols]
+                cols = st.columns(n_cols)
+                for col, img, lbl in zip(cols, row, row_labels):
+                    col.image(img, caption=lbl, use_container_width=True)
 
-            st.caption(f"※ 残り {max(0, _count - 2)} 枚はOK後に出力されます")
-
+            st.divider()
             col_ok, col_ng = st.columns(2)
             with col_ok:
                 if st.button("OK、全部出力する", type="primary", use_container_width=True, key="slide_ok_btn"):
