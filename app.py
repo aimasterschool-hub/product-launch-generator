@@ -1161,7 +1161,6 @@ if "current_script" in st.session_state:
     # ── スライド生成 ──────────────────────────────────────────────────────────
     st.divider()
     st.subheader("スライド作成")
-    st.caption("台本が完成したらYouTube横動画用スライドを自動生成します（16:9 / 1920×1080）")
 
     # スライドフォーマット・デザイン設定
     col_f, col_d1 = st.columns(2)
@@ -1170,21 +1169,17 @@ if "current_script" in st.session_state:
     with col_d1:
         design_preset = st.selectbox("デザインプリセット", list(DESIGN_PRESETS.keys()) + ["カスタム"])
     if design_preset == "カスタム":
-        with col_d2:
-            dc1, dc2, dc3, dc4 = st.columns(4)
-            bg_c    = dc1.color_picker("背景色",     "#1a1a1a")
-            title_c = dc2.color_picker("タイトル色", "#ffffff")
-            cont_c  = dc3.color_picker("テキスト色", "#e0e0e0")
-            acc_c   = dc4.color_picker("アクセント色","#4a9eff")
-            design = {"bg": bg_c, "title": title_c, "content": cont_c, "accent": acc_c}
+        dc1, dc2, dc3, dc4 = st.columns(4)
+        bg_c    = dc1.color_picker("背景色",      "#1a1a1a")
+        title_c = dc2.color_picker("タイトル色",  "#ffffff")
+        cont_c  = dc3.color_picker("テキスト色",  "#e0e0e0")
+        acc_c   = dc4.color_picker("アクセント色", "#4a9eff")
+        design = {"bg": bg_c, "title": title_c, "content": cont_c, "accent": acc_c}
     else:
         design = DESIGN_PRESETS[design_preset]
 
-    # 出力形式
     output_formats = st.multiselect(
-        "出力形式",
-        ["PPT (.pptx)", "PNG (.zip)"],
-        default=["PPT (.pptx)"],
+        "出力形式", ["PPT (.pptx)", "PNG (.zip)"], default=["PPT (.pptx)"],
     )
 
     if st.button("スライドを作成する", use_container_width=True):
@@ -1192,42 +1187,94 @@ if "current_script" in st.session_state:
             client = anthropic.Anthropic(api_key=api_key)
             with st.spinner("スライド構成を生成中..."):
                 slide_data = generate_slide_data(client, st.session_state.current_script)
+            st.session_state.slide_data         = slide_data
+            st.session_state.slide_design       = design
+            st.session_state.slide_format       = slide_format
+            st.session_state.slide_output_formats = output_formats
+            st.session_state.slide_preview_ready = True
+            st.session_state.slide_approved      = False
+            # 生成済みバイトをリセット
+            for k in ("slide_pptx_bytes", "slide_zip_bytes", "slide_output_ts"):
+                st.session_state.pop(k, None)
+            st.rerun()
+        except Exception as e:
+            st.error(f"スライド生成エラー: {e}")
 
-            fmt = SLIDE_FORMATS[slide_format]
-            st.session_state.slide_data = slide_data
-            st.session_state.slide_design = design
-            st.session_state.slide_format = slide_format
-            slide_count = len(slide_data.get("slides", []))
-            st.success(f"{slide_count} 枚のスライドを生成しました")
+    # ── プレビュー & 承認フロー ──
+    if st.session_state.get("slide_preview_ready"):
+        _sd      = st.session_state.slide_data
+        _design  = st.session_state.slide_design
+        _fmt     = SLIDE_FORMATS[st.session_state.slide_format]
+        _ofmts   = st.session_state.get("slide_output_formats", ["PPT (.pptx)"])
+        _count   = len(_sd.get("slides", []))
 
+        if not st.session_state.get("slide_approved"):
+            # ── プレビュー表示 ──
+            st.info(f"合計 **{_count} 枚**のスライドを生成しました。最初の数枚をプレビュー表示します。")
+
+            orig_w, orig_h = _fmt["png"]
+            prev_size = (orig_w // 3, orig_h // 3)
+            prev_data = {"title": _sd["title"], "slides": _sd["slides"][:2]}
+            prev_imgs = build_png_slides(prev_data, _design, prev_size)
+
+            n_cols = min(len(prev_imgs), 3)
+            labels = ["タイトル"] + [f"スライド {i+1}" for i in range(len(prev_imgs) - 1)]
+            for col, img, label in zip(st.columns(n_cols), prev_imgs, labels):
+                col.image(img, caption=label, use_container_width=True)
+
+            st.caption(f"※ 残り {max(0, _count - 2)} 枚はOK後に出力されます")
+
+            col_ok, col_ng = st.columns(2)
+            with col_ok:
+                if st.button("OK、全部出力する", type="primary", use_container_width=True, key="slide_ok_btn"):
+                    st.session_state.slide_approved = True
+                    st.rerun()
+            with col_ng:
+                if st.button("やり直す（再生成）", use_container_width=True, key="slide_retry_btn"):
+                    for k in ("slide_preview_ready", "slide_approved", "slide_data",
+                              "slide_pptx_bytes", "slide_zip_bytes"):
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+        else:
+            # ── 全スライド出力（初回のみ生成してキャッシュ）──
             display_name = st.session_state.display_name
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = st.session_state.setdefault("slide_output_ts", datetime.now().strftime("%Y%m%d_%H%M%S"))
 
-            if "PPT (.pptx)" in output_formats:
+            if "PPT (.pptx)" in _ofmts and "slide_pptx_bytes" not in st.session_state:
                 with st.spinner("PPTXを作成中..."):
-                    pptx_bytes = build_pptx(slide_data, design, fmt["pptx"])
+                    st.session_state.slide_pptx_bytes = build_pptx(_sd, _design, _fmt["pptx"])
+
+            if "PNG (.zip)" in _ofmts and "slide_zip_bytes" not in st.session_state:
+                with st.spinner(f"PNG画像を生成中（{_count} 枚）..."):
+                    imgs = build_png_slides(_sd, _design, _fmt["png"])
+                    st.session_state.slide_zip_bytes = build_png_zip(imgs, display_name)
+
+            if "slide_pptx_bytes" in st.session_state:
                 st.download_button(
                     "PPTをダウンロード (.pptx)",
-                    data=pptx_bytes,
+                    data=st.session_state.slide_pptx_bytes,
                     file_name=f"{ts}_{display_name}_slides.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                     use_container_width=True,
+                    key="dl_pptx_main",
                 )
-
-            if "PNG (.zip)" in output_formats:
-                with st.spinner("PNG画像を生成中..."):
-                    images = build_png_slides(slide_data, design, fmt["png"])
-                    zip_bytes = build_png_zip(images, display_name)
+            if "slide_zip_bytes" in st.session_state:
                 st.download_button(
                     "PNGをダウンロード (.zip)",
-                    data=zip_bytes,
+                    data=st.session_state.slide_zip_bytes,
                     file_name=f"{ts}_{display_name}_slides_png.zip",
                     mime="application/zip",
                     use_container_width=True,
+                    key="dl_png_main",
                 )
 
-        except Exception as e:
-            st.error(f"スライド生成エラー: {e}")
+            st.success(f"全 {_count} 枚の出力が完了しました")
+            if st.button("スライドを作り直す", use_container_width=True, key="slide_redo_btn"):
+                for k in ("slide_preview_ready", "slide_approved", "slide_pptx_bytes",
+                          "slide_zip_bytes", "slide_output_ts"):
+                    st.session_state.pop(k, None)
+                st.rerun()
 
     # ── スライド修正 ──────────────────────────────────────────────────────────
     if "slide_data" in st.session_state:
@@ -1278,10 +1325,15 @@ if "current_script" in st.session_state:
                     st.success(f"修正完了：{slide_count} 枚")
                     design = st.session_state.get("slide_design", DESIGN_PRESETS["ダーク（黒背景・白文字）"])
                     fmt = SLIDE_FORMATS.get(st.session_state.get("slide_format", list(SLIDE_FORMATS.keys())[0]))
+                    rev_ofmts = st.session_state.get("slide_output_formats", ["PPT (.pptx)"])
                     display_name = st.session_state.display_name
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    # キャッシュをリセット（修正後は再生成）
+                    for k in ("slide_pptx_bytes", "slide_zip_bytes", "slide_output_ts"):
+                        st.session_state.pop(k, None)
+                    st.session_state.slide_approved = True
 
-                    if "PPT (.pptx)" in output_formats:
+                    if "PPT (.pptx)" in rev_ofmts:
                         pptx_bytes = build_pptx(slide_data, design, fmt["pptx"])
                         st.download_button(
                             "修正済みPPTをダウンロード (.pptx)",
@@ -1292,7 +1344,7 @@ if "current_script" in st.session_state:
                             key="dl_revised_pptx",
                         )
 
-                    if "PNG (.zip)" in output_formats:
+                    if "PNG (.zip)" in rev_ofmts:
                         images = build_png_slides(slide_data, design, fmt["png"])
                         zip_bytes = build_png_zip(images, display_name)
                         st.download_button(
