@@ -67,60 +67,85 @@ def build_system_prompt(samples):
 
 
 def build_user_prompt(info):
-    strengths = info.get("strengths", [])
-    strengths_str = "\n".join(f"  - {s}" for s in strengths if s) or "  （未入力）"
+    strengths = [s for s in info.get("strengths", []) if s]
+    strengths_str = "\n".join(f"  - {s}" for s in strengths) or "  （未入力）"
+
+    voices = [v for v in info.get("voices", []) if v]
+    voices_str = "\n".join(f"  - {v}" for v in voices) if voices else "  （なし）"
+
+    structure_type = info.get("structure_type", "従来型")
+    if structure_type == "従来型":
+        structure_desc = "実績提示→商品説明→販売。インタビュー or 一人語り形式。"
+    else:
+        structure_desc = "無料ノウハウ・セミナー形式で価値提供→「時間・リスクが心配な方はこちら」と商品販売に自然につなぐフロントエンド型。"
+
+    interviewer = info.get("interviewer_name", "").strip()
+    dialogue_style = f"インタビュアー「{interviewer}」との対話形式" if interviewer else "一人語り（モノローグ）形式"
+
+    comment_prompt = info.get("comment_prompt", "").strip()
+    comment_instruction = f"「{comment_prompt}」" if comment_prompt else "商品内容に合った質問を自動生成してください"
 
     lines = [
         "以下のプロダクト情報をもとに、サンプル台本のスタイルを踏襲した台本を生成してください。",
         "",
-        "## 商品・ビジネス基本情報",
+        "## 構成タイプ",
+        f"**タイプ**: {structure_type}",
+        f"**説明**: {structure_desc}",
+        f"**話し方スタイル**: {dialogue_style}",
+        "",
+        "## 商品・基本情報",
         f"**商品名**: {info.get('name', '')}",
-        f"**ジャンル/カテゴリ**: {info.get('category', '')}",
-        f"**販売者名（ペルソナ）**: {info.get('seller_name', '')}",
-        f"**インタビュアー名**: {info.get('interviewer_name', '')}",
+        f"**ジャンル**: {info.get('category', '')}",
+        f"**販売者名**: {info.get('seller_name', '')}",
         f"**販売者の権威・実績**: {info.get('seller_authority', '')}",
-        f"**メインベネフィット・実績数値**: {info.get('main_benefit', '')}",
-        f"**メインの謳い文句（キャッチコピー）**: {info.get('catchcopy', '')}",
+        f"**キャッチコピー**: {info.get('catchcopy', '')}",
         f"**ターゲット層**: {info.get('target_audience', '')}",
         f"**実績数値①（短期）**: {info.get('result1', '')}",
         f"**実績数値②（中〜長期）**: {info.get('result2', '')}",
-        f"**月利/月収目安**: {info.get('monthly_return', '')}",
+        f"**月利 / 月収目安**: {info.get('monthly_return', '')}",
         f"**始めやすさの根拠**: {info.get('ease_of_start', '')}",
         "",
         "**商品の強み**:",
         strengths_str,
         "",
-        "## 社会的背景・痛み訴求",
-        f"**視聴者が抱えるペイン**: {info.get('pain_points', '')}",
-        f"**なぜ今この商品が必要か（why now）**: {info.get('why_now', '')}",
+        "## 利用者の声（喜びの声）",
+        voices_str,
         "",
-        "## 信頼性・第三者証拠",
-        f"**第三者の種類**: {info.get('third_party_type', '')}",
-        f"**第三者の名前・肩書き**: {info.get('third_party_name', '')}",
-        f"**第三者の裏付けポイント**: {info.get('third_party_points', '')}",
+        "## 社会背景・痛み訴求",
+        f"**視聴者のペイン**: {info.get('pain_points', '')}",
+        f"**なぜ今必要か（why now）**: {info.get('why_now', '')}",
         "",
-        "## 価格・オファー設定",
+        "## 第三者・信頼性",
+        f"**第三者の種類**: {info.get('third_party_type', 'なし')}",
+        f"**名前・肩書き**: {info.get('third_party_name', '')}",
+        f"**裏付けポイント**: {info.get('third_party_points', '')}",
+        "",
+        "## 価格・オファー",
         f"**定価**: {info.get('regular_price', '')}",
         f"**特別価格**: {info.get('special_price', '')}",
-        f"**期間限定の条件**: {info.get('limited_time', '')}",
-        f"**分割対応**: {info.get('installment', '')}",
+        f"**期間限定条件**: {info.get('limited_time', '')}",
+        f"**分割対応**: {info.get('installment', 'なし')}",
         f"**特典内容**: {info.get('bonuses', '')}",
         "",
-        "## トーン・構成オプション",
-        f"**動画の話数構成**: {info.get('episode_structure', '')}",
-        f"**クロージングの強度**: {info.get('closing_strength', '')}",
+        "## コメント促進パート（動画末尾）",
+        f"**視聴者への質問**: {comment_instruction}",
+        "",
+        "## 構成オプション",
+        f"**話数構成**: {info.get('episode_structure', '1話完結')}",
+        f"**クロージングの強度**: {info.get('closing_strength', '標準')}",
     ]
 
     if info.get("notes"):
-        lines += ["", f"**追加メモ・要望**: {info['notes']}"]
+        lines += ["", f"**追加メモ**: {info['notes']}"]
 
     lines += [
         "",
         "【出力形式の指示】",
         "- 【セクション名 - タイムコード】の見出しを使って構成を明示してください",
-        "- 【ナレーション】【SE】【映像】などの役割表記を適切に含めてください",
+        "- 【ナレーション】【インタビュアー】【販売者】【SE】【映像】などの役割表記を適切に使ってください",
         "- サンプル台本と同じスタイル・語り口・構成で作成してください",
         "- 話数構成が指定されている場合は、その構成に合わせて台本を分けてください",
+        "- 動画末尾にコメント促進パートを必ず含めてください",
     ]
     return "\n".join(lines)
 
@@ -139,7 +164,6 @@ def save_script(script, product_name):
 st.set_page_config(page_title="台本生成システム", page_icon="🎬", layout="wide")
 st.title("🎬 プロダクトローンチ 台本生成システム")
 
-# APIキー確認
 api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 if not api_key:
     api_key = st.text_input("Anthropic APIキー", type="password", placeholder="sk-ant-...")
@@ -147,7 +171,6 @@ if not api_key:
         st.warning("APIキーを入力してください")
         st.stop()
 
-# サイドバー：サンプル台本
 with st.sidebar:
     st.header("サンプル台本")
     samples = load_samples()
@@ -160,181 +183,207 @@ with st.sidebar:
     if st.button("再読み込み", use_container_width=True):
         st.rerun()
 
-# systemブロックをセッションにキャッシュ
 if "system_blocks" not in st.session_state or st.session_state.get("samples_count") != len(samples):
     st.session_state.system_blocks = build_system_prompt(samples)
     st.session_state.samples_count = len(samples)
 
-# ── 入力フォーム ──────────────────────────────────────────────────────────────
+# ── フォーム ─────────────────────────────────────────────────────────────────
 
 with st.form("product_form"):
 
-    # ── セクション1：商品・ビジネス基本情報 ──
-    st.subheader("商品・ビジネス基本情報")
+    # 構成タイプ
+    st.subheader("構成タイプ")
+    structure_type = st.radio(
+        "タイプを選択",
+        ["従来型", "フロントエンド型"],
+        captions=[
+            "実績提示→商品説明→販売。インタビュー or 一人語り。スマートイット・アルゴテック型。",
+            "無料ノウハウ・セミナー形式で価値提供→「時間・リスクが心配な方はこちら」と商品販売に自然につなぐ。",
+        ],
+        horizontal=True,
+    )
+
+    st.divider()
+
+    # 商品・基本情報
+    st.subheader("商品・基本情報")
     col1, col2 = st.columns(2)
     with col1:
-        name = st.text_input("商品名 *", placeholder="例：スマートイット")
-        category = st.selectbox("ジャンル / カテゴリ", [
+        name = st.text_input("商品名", placeholder="例：スマートイット")
+        category = st.selectbox("ジャンル", [
             "FX・為替投資", "株式投資・トレード", "仮想通貨・Web3",
             "副業・ビジネス", "美容・スキンケア", "健康・ダイエット",
             "教育・スキルアップ", "テック・SaaS", "食品・サプリ", "その他"
         ])
-        seller_name = st.text_input("販売者名（ペルソナ）", placeholder="例：はたけ")
-        interviewer_name = st.text_input("インタビュアー名", placeholder="例：ふじき（第三者）")
-        seller_authority = st.text_input("販売者の権威・実績", placeholder="例：FX系YouTuber、動画1500本、5年以上活動")
+        seller_name = st.text_input("販売者名", placeholder="例：はたけ")
+        interviewer_name = st.text_input(
+            "インタビュアー名（空欄で一人語り形式）",
+            placeholder="例：ふじき　　※空欄→モノローグ形式"
+        )
+        seller_authority = st.text_input("販売者の権威・実績", placeholder="例：FX系YouTuber、動画1500本以上、5年以上活動")
     with col2:
-        main_benefit = st.text_input("メインベネフィット・実績数値", placeholder="例：月5分で月10万円")
-        catchcopy = st.text_input("メインの謳い文句（キャッチコピー）", placeholder="例：月5分で月10万円")
-        target_audience = st.text_input("ターゲット層", placeholder="例：投資初心者、副業したいサラリーマン")
-        result1 = st.text_input("実績数値①（短期）", placeholder="例：3ヶ月で31万円の利益")
-        result2 = st.text_input("実績数値②（中〜長期）", placeholder="例：1年で125万円の利益")
-
-    col3, col4 = st.columns(2)
-    with col3:
+        catchcopy = st.text_input("キャッチコピー", placeholder="例：月5分で月10万円")
+        target_audience = st.text_input("ターゲット層", placeholder="例：投資初心者、副業したい人")
+        result1 = st.text_input("実績数値①", placeholder="例：3ヶ月で31万円の利益")
+        result2 = st.text_input("実績数値②", placeholder="例：1年で125万円の利益")
         monthly_return = st.text_input("月利 / 月収目安", placeholder="例：月利10%、月10万円")
-    with col4:
         ease_of_start = st.text_input("始めやすさの根拠", placeholder="例：2万円から、スマホだけでOK")
 
-    st.markdown("**商品の強み**（最大4件）")
+    st.markdown("**商品の強み**（入力した分だけ使用）")
     s_cols = st.columns(4)
-    strengths = []
     strength_placeholders = [
         "例：証拠金2万円から始められる",
         "例：勝率78%で安心感がある",
         "例：ドローダウン平均10%以下",
         "例：完全自動、ON/OFFも不要",
     ]
+    strengths = []
     for i, col in enumerate(s_cols):
         s = col.text_input(f"強み{i+1}", key=f"str_{i}", label_visibility="collapsed", placeholder=strength_placeholders[i])
         strengths.append(s)
 
     st.divider()
 
-    # ── セクション2：社会的背景・痛み訴求 ──
-    st.subheader("社会的背景・痛み訴求")
-    col5, col6 = st.columns(2)
-    with col5:
-        pain_points = st.text_area("視聴者が抱えるペイン（悩み・不安）",
-            placeholder="例：残業しても給料が上がらない、将来が不安、副業する時間がない", height=100)
-    with col6:
-        why_now = st.text_area("なぜ今この商品が必要か（why now）",
-            placeholder="例：物価は上がるのに賃金は上がらない時代。自分で資産を作るしかない。", height=100)
+    # 利用者の声
+    st.subheader("利用者の声（喜びの声）")
+    st.caption("名前・属性と声のセットで入力してください")
+    voice1 = st.text_input("声①", placeholder="例：30代会社員Aさん：導入1ヶ月で8万円の利益が出ました！初心者でも全く問題なかったです。")
+    voice2 = st.text_input("声②", placeholder="例：40代主婦Bさん：スマホだけで設定できて、今は毎月安定して収入が入っています。")
+    voice3 = st.text_input("声③", placeholder="例：20代フリーランスCさん：他のシステムで失敗したけどこれは違いました。")
 
     st.divider()
 
-    # ── セクション3：信頼性・第三者証拠 ──
-    st.subheader("信頼性・第三者証拠")
-    col7, col8, col9 = st.columns(3)
+    # 社会背景・痛み訴求
+    st.subheader("社会背景・痛み訴求")
+    col3, col4 = st.columns(2)
+    with col3:
+        pain_points = st.text_area("視聴者のペイン", placeholder="例：残業しても給料が上がらない、将来が不安、副業する時間がない", height=100)
+    with col4:
+        why_now = st.text_area("なぜ今必要か（why now）", placeholder="例：物価は上がるのに賃金は上がらない。自分で資産を作るしかない。", height=100)
+
+    st.divider()
+
+    # 第三者・信頼性
+    st.subheader("第三者・信頼性")
+    col5, col6, col7 = st.columns(3)
+    with col5:
+        third_party_type = st.selectbox("第三者の種類", ["なし", "開発者・専門家", "ユーザー・実践者", "有識者・研究者", "著名人・インフルエンサー"])
+    with col6:
+        third_party_name = st.text_input("名前・肩書き", placeholder="例：桑田（システム開発者）")
     with col7:
-        third_party_type = st.selectbox("第三者の種類", [
-            "開発者・専門家", "ユーザー・実践者", "有識者・研究者", "著名人・インフルエンサー", "なし"
-        ])
-    with col8:
-        third_party_name = st.text_input("第三者の名前・肩書き", placeholder="例：桑田さん（システム開発者、20代）")
-    with col9:
         third_party_points = st.text_input("第三者の裏付けポイント", placeholder="例：2万通りのロジックを検証、14歳からシステム開発")
 
     st.divider()
 
-    # ── セクション4：価格・オファー設定 ──
-    st.subheader("価格・オファー設定")
-    col10, col11, col12 = st.columns(3)
-    with col10:
+    # 価格・オファー
+    st.subheader("価格・オファー")
+    col8, col9, col10 = st.columns(3)
+    with col8:
         regular_price = st.text_input("定価", placeholder="例：158,000円")
         special_price = st.text_input("特別価格", placeholder="例：98,000円")
-    with col11:
-        limited_time = st.text_input("期間限定の条件", placeholder="例：3日間限定")
-        installment = st.selectbox("分割対応", ["あり", "なし"])
-    with col12:
-        bonuses = st.text_area("特典内容（カンマ区切り）",
-            placeholder="例：導入マニュアル、勝ち組トレーダー手法、キャッシュを増やす方法", height=100)
+    with col9:
+        limited_time = st.text_input("期間限定条件", placeholder="例：3日間限定")
+        installment = st.selectbox("分割対応", ["なし", "あり"])
+    with col10:
+        bonuses = st.text_area("特典内容（カンマ区切り）", placeholder="例：導入マニュアル、トレーダー手法、キャッシュを増やす方法", height=100)
 
     st.divider()
 
-    # ── セクション5：トーン・構成オプション ──
-    st.subheader("トーン・構成オプション")
-    col13, col14 = st.columns(2)
-    with col13:
-        episode_structure = st.selectbox("動画の話数構成", [
+    # コメント促進パート
+    st.subheader("コメント促進パート（動画末尾）")
+    comment_prompt = st.text_input(
+        "視聴者に聞きたい質問 / お題（空欄で自動生成）",
+        placeholder="例：今の月収に満足していますか？コメントで教えてください！"
+    )
+    st.caption("空欄の場合、商品内容に合った質問を自動で生成します")
+
+    st.divider()
+
+    # 構成オプション
+    st.subheader("構成オプション")
+    col11, col12 = st.columns(2)
+    with col11:
+        episode_structure = st.selectbox("話数構成", [
             "1話完結", "2話構成（前編・後編）", "3話構成", "4話構成", "5話構成"
         ])
         closing_strength = st.selectbox("クロージングの強度", [
             "真摯・控えめ（押し付けない）", "標準（バランス型）", "強め（urgency高め）", "最強（限定・希少性全開）"
         ])
-    with col14:
-        notes = st.text_area("追加で入れたいポイント・メモ（任意）",
-            placeholder="例：競合との比較、特定のNG表現、強調したいエピソードなど", height=100)
+    with col12:
+        notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100)
 
     submitted = st.form_submit_button("台本を生成する", type="primary", use_container_width=True)
 
 # ── 生成処理 ──────────────────────────────────────────────────────────────────
 
 if submitted:
-    if not name:
-        st.error("商品名は必須です")
-    else:
-        info = {
-            "name": name, "category": category, "seller_name": seller_name,
-            "interviewer_name": interviewer_name, "seller_authority": seller_authority,
-            "main_benefit": main_benefit, "catchcopy": catchcopy,
-            "target_audience": target_audience, "result1": result1, "result2": result2,
-            "monthly_return": monthly_return, "ease_of_start": ease_of_start,
-            "strengths": strengths, "pain_points": pain_points, "why_now": why_now,
-            "third_party_type": third_party_type, "third_party_name": third_party_name,
-            "third_party_points": third_party_points, "regular_price": regular_price,
-            "special_price": special_price, "limited_time": limited_time,
-            "installment": installment, "bonuses": bonuses,
-            "episode_structure": episode_structure, "closing_strength": closing_strength,
-            "notes": notes,
+    info = {
+        "structure_type": structure_type,
+        "name": name, "category": category, "seller_name": seller_name,
+        "interviewer_name": interviewer_name, "seller_authority": seller_authority,
+        "catchcopy": catchcopy, "target_audience": target_audience,
+        "result1": result1, "result2": result2,
+        "monthly_return": monthly_return, "ease_of_start": ease_of_start,
+        "strengths": strengths,
+        "voices": [voice1, voice2, voice3],
+        "pain_points": pain_points, "why_now": why_now,
+        "third_party_type": third_party_type, "third_party_name": third_party_name,
+        "third_party_points": third_party_points,
+        "regular_price": regular_price, "special_price": special_price,
+        "limited_time": limited_time, "installment": installment, "bonuses": bonuses,
+        "comment_prompt": comment_prompt,
+        "episode_structure": episode_structure, "closing_strength": closing_strength,
+        "notes": notes,
+    }
+    user_prompt = build_user_prompt(info)
+
+    st.divider()
+    st.subheader("生成結果")
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        script = ""
+        placeholder = st.empty()
+
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=4096,
+            system=st.session_state.system_blocks,
+            messages=[{"role": "user", "content": user_prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                script += text
+                placeholder.markdown(script)
+            final = stream.get_final_message()
+
+        usage = final.usage
+        stats = {
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "cache_creation_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+            "cache_read_tokens": getattr(usage, "cache_read_input_tokens", 0),
         }
-        user_prompt = build_user_prompt(info)
+
+        display_name = name if name else "台本"
+        output_path = save_script(script, display_name)
 
         st.divider()
-        st.subheader("生成結果")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("入力トークン", f"{stats['input_tokens']:,}")
+        c2.metric("出力トークン", f"{stats['output_tokens']:,}")
+        if stats["cache_creation_tokens"]:
+            c3.metric("キャッシュ書込み", f"{stats['cache_creation_tokens']:,}")
+        if stats["cache_read_tokens"]:
+            c4.metric("キャッシュ読込み", f"{stats['cache_read_tokens']:,}")
 
-        try:
-            client = anthropic.Anthropic(api_key=api_key)
-            script = ""
-            placeholder = st.empty()
+        st.success(f"保存済み: {output_path}")
+        st.download_button(
+            "台本をダウンロード (.txt)",
+            data=script.encode("utf-8"),
+            file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
 
-            with client.messages.stream(
-                model=MODEL,
-                max_tokens=4096,
-                system=st.session_state.system_blocks,
-                messages=[{"role": "user", "content": user_prompt}],
-            ) as stream:
-                for text in stream.text_stream:
-                    script += text
-                    placeholder.markdown(script)
-                final = stream.get_final_message()
-
-            usage = final.usage
-            stats = {
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "cache_creation_tokens": getattr(usage, "cache_creation_input_tokens", 0),
-                "cache_read_tokens": getattr(usage, "cache_read_input_tokens", 0),
-            }
-
-            output_path = save_script(script, name)
-
-            st.divider()
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("入力トークン", f"{stats['input_tokens']:,}")
-            c2.metric("出力トークン", f"{stats['output_tokens']:,}")
-            if stats["cache_creation_tokens"]:
-                c3.metric("キャッシュ書込み", f"{stats['cache_creation_tokens']:,}")
-            if stats["cache_read_tokens"]:
-                c4.metric("キャッシュ読込み", f"{stats['cache_read_tokens']:,}")
-
-            st.success(f"保存済み: {output_path}")
-            st.download_button(
-                "台本をダウンロード (.txt)",
-                data=script.encode("utf-8"),
-                file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{name}.txt",
-                mime="text/plain",
-                use_container_width=True,
-            )
-
-        except anthropic.APIError as e:
-            st.error(f"APIエラー: {e}")
+    except anthropic.APIError as e:
+        st.error(f"APIエラー: {e}")
