@@ -171,6 +171,7 @@ def build_user_prompt(info):
         "",
         "## 構成オプション",
         f"**話数構成**: {episode_structure}",
+        f"**1話あたりの動画の長さ**: {info.get('video_duration', '7分（約2,100文字）')}",
         f"**クロージングの強度**: {info.get('closing_strength', '標準')}",
     ]
 
@@ -185,6 +186,7 @@ def build_user_prompt(info):
         "- サンプル台本と同じスタイル・語り口・構成で作成してください",
         "- 話数構成が指定されている場合は、その構成に合わせて台本を分けてください",
         "- コメント促進パートが必要な場合は各話の動画末尾に必ず含めてください",
+        f"- 1話あたりの目標文字数を厳守してください（{info.get('video_duration', '7分（約2,100文字）')}）",
     ]
     return "\n".join(lines)
 
@@ -396,6 +398,15 @@ with st.form("product_form"):
         closing_strength = st.selectbox("クロージングの強度", [
             "真摯・控えめ（押し付けない）", "標準（バランス型）", "強め（urgency高め）", "最強（限定・希少性全開）"
         ])
+        video_duration = st.selectbox("1話あたりの動画の長さ", [
+            "3分（約900文字）",
+            "5分（約1,500文字）",
+            "7分（約2,100文字）",
+            "10分（約3,000文字）",
+            "15分（約4,500文字）",
+            "20分（約6,000文字）",
+            "30分（約9,000文字）",
+        ], index=2)
     with col12:
         notes = st.text_area("追加メモ（任意）", placeholder="例：競合との比較を入れたい、このワードは避けたいなど", height=100)
 
@@ -410,13 +421,24 @@ with st.form("product_form"):
 
 # ── 生成処理 ──────────────────────────────────────────────────────────────────
 
-def run_generation(client, system_blocks, messages, display_name):
+DURATION_MAX_TOKENS = {
+    "3分": 2048,
+    "5分": 3000,
+    "7分": 4096,
+    "10分": 6000,
+    "15分": 8192,
+    "20分": 12000,
+    "30分": 16000,
+}
+
+
+def run_generation(client, system_blocks, messages, display_name, max_tokens=4096):
     """Claudeにリクエストを送りストリーミング表示する。台本とstatsを返す。"""
     script = ""
     placeholder = st.empty()
     with client.messages.stream(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=max_tokens,
         system=system_blocks,
         messages=messages,
     ) as stream:
@@ -477,6 +499,7 @@ if submitted:
         "comment_includes": comment_includes,
         "comment_prompts": comment_prompts,
         "episode_structure": episode_structure, "closing_strength": closing_strength,
+        "video_duration": video_duration,
         "notes": notes,
     }
     user_prompt = build_user_prompt(info)
@@ -495,8 +518,14 @@ if submitted:
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
+        # 動画の長さからmax_tokensを決定
+        duration_key = info.get("video_duration", "7分")[:2]
+        episode_num = int(info.get("episode_structure", "1話完結")[0]) if info.get("episode_structure", "1")[0].isdigit() else 1
+        base_tokens = DURATION_MAX_TOKENS.get(duration_key, 4096)
+        max_tokens = min(base_tokens * episode_num, 32000)
+
         messages = [{"role": "user", "content": user_prompt}]
-        script, stats = run_generation(client, st.session_state.system_blocks, messages, display_name)
+        script, stats = run_generation(client, st.session_state.system_blocks, messages, display_name, max_tokens)
 
         # セッションに保存（再編集用）
         st.session_state.current_script = script
