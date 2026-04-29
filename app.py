@@ -316,6 +316,52 @@ with st.form("product_form"):
 
 # ── 生成処理 ──────────────────────────────────────────────────────────────────
 
+def run_generation(client, system_blocks, messages, display_name):
+    """Claudeにリクエストを送りストリーミング表示する。台本とstatsを返す。"""
+    script = ""
+    placeholder = st.empty()
+    with client.messages.stream(
+        model=MODEL,
+        max_tokens=4096,
+        system=system_blocks,
+        messages=messages,
+    ) as stream:
+        for text in stream.text_stream:
+            script += text
+            placeholder.markdown(script)
+        final = stream.get_final_message()
+    usage = final.usage
+    stats = {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cache_creation_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+        "cache_read_tokens": getattr(usage, "cache_read_input_tokens", 0),
+    }
+    return script, stats
+
+
+def show_download(script, display_name, stats):
+    """統計情報とダウンロードボタンを表示する。"""
+    output_path = save_script(script, display_name)
+    st.divider()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("入力トークン", f"{stats['input_tokens']:,}")
+    c2.metric("出力トークン", f"{stats['output_tokens']:,}")
+    if stats["cache_creation_tokens"]:
+        c3.metric("キャッシュ書込み", f"{stats['cache_creation_tokens']:,}")
+    if stats["cache_read_tokens"]:
+        c4.metric("キャッシュ読込み", f"{stats['cache_read_tokens']:,}")
+    st.success(f"保存済み: {output_path}")
+    st.download_button(
+        "台本をダウンロード (.txt)",
+        data=script.encode("utf-8"),
+        file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name}.txt",
+        mime="text/plain",
+        use_container_width=True,
+        key=f"dl_{datetime.now().strftime('%H%M%S%f')}",
+    )
+
+
 if submitted:
     info = {
         "structure_type": structure_type,
@@ -336,54 +382,63 @@ if submitted:
         "notes": notes,
     }
     user_prompt = build_user_prompt(info)
+    display_name = name if name else "台本"
 
     st.divider()
     st.subheader("生成結果")
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
-        script = ""
-        placeholder = st.empty()
+        messages = [{"role": "user", "content": user_prompt}]
+        script, stats = run_generation(client, st.session_state.system_blocks, messages, display_name)
 
-        with client.messages.stream(
-            model=MODEL,
-            max_tokens=4096,
-            system=st.session_state.system_blocks,
-            messages=[{"role": "user", "content": user_prompt}],
-        ) as stream:
-            for text in stream.text_stream:
-                script += text
-                placeholder.markdown(script)
-            final = stream.get_final_message()
+        # セッションに保存（再編集用）
+        st.session_state.current_script = script
+        st.session_state.current_messages = messages
+        st.session_state.display_name = display_name
 
-        usage = final.usage
-        stats = {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "cache_creation_tokens": getattr(usage, "cache_creation_input_tokens", 0),
-            "cache_read_tokens": getattr(usage, "cache_read_input_tokens", 0),
-        }
-
-        display_name = name if name else "台本"
-        output_path = save_script(script, display_name)
-
-        st.divider()
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("入力トークン", f"{stats['input_tokens']:,}")
-        c2.metric("出力トークン", f"{stats['output_tokens']:,}")
-        if stats["cache_creation_tokens"]:
-            c3.metric("キャッシュ書込み", f"{stats['cache_creation_tokens']:,}")
-        if stats["cache_read_tokens"]:
-            c4.metric("キャッシュ読込み", f"{stats['cache_read_tokens']:,}")
-
-        st.success(f"保存済み: {output_path}")
-        st.download_button(
-            "台本をダウンロード (.txt)",
-            data=script.encode("utf-8"),
-            file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name}.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
+        show_download(script, display_name, stats)
 
     except anthropic.APIError as e:
         st.error(f"APIエラー: {e}")
+
+
+# ── 再編集パネル ──────────────────────────────────────────────────────────────
+
+if "current_script" in st.session_state:
+    st.divider()
+    st.subheader("再編集")
+    st.caption("生成した台本に修正指示を出して再生成できます")
+
+    edit_instruction = st.text_area(
+        "修正指示",
+        placeholder="例：クロージングをもっと強くして\n例：オープニングの問いかけを変えて\n例：〇〇のセクションを削除して",
+        height=100,
+        key="edit_instruction",
+    )
+
+    if st.button("再編集する", type="primary", use_container_width=True):
+        if not edit_instruction.strip():
+            st.warning("修正指示を入力してください")
+        else:
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                display_name = st.session_state.display_name
+
+                # 会話履歴に現在の台本とアシスタントの返答を追加
+                messages = st.session_state.current_messages + [
+                    {"role": "assistant", "content": st.session_state.current_script},
+                    {"role": "user", "content": f"以下の修正指示に従って台本を修正してください：\n\n{edit_instruction}"},
+                ]
+
+                st.subheader("修正結果")
+                script, stats = run_generation(client, st.session_state.system_blocks, messages, display_name)
+
+                # 最新の台本に更新
+                st.session_state.current_script = script
+                st.session_state.current_messages = messages
+
+                show_download(script, display_name, stats)
+
+            except anthropic.APIError as e:
+                st.error(f"APIエラー: {e}")
