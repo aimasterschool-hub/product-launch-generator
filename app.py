@@ -2,6 +2,7 @@
 import os
 import re
 import json
+import zipfile
 import subprocess
 from io import BytesIO
 import streamlit as st
@@ -11,8 +12,15 @@ import anthropic
 from tavily import TavilyClient
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.dpi import Emu
-from pptx.enum.text import PP_ALIGN
+from PIL import Image, ImageDraw, ImageFont
+
+DESIGN_PRESETS = {
+    "ダーク（黒背景・白文字）":   {"bg": "#1a1a1a", "title": "#ffffff", "content": "#e0e0e0", "accent": "#4a9eff"},
+    "ホワイト（白背景・黒文字）": {"bg": "#ffffff", "title": "#1a1a1a", "content": "#333333", "accent": "#2563eb"},
+    "ネイビー（紺背景・白文字）": {"bg": "#1e3a5f", "title": "#ffffff", "content": "#d0e8ff", "accent": "#ffd700"},
+    "レッド（赤背景・白文字）":   {"bg": "#8b0000", "title": "#ffffff", "content": "#ffe0e0", "accent": "#ffcc00"},
+    "グリーン（緑背景・白文字）": {"bg": "#1a4a2e", "title": "#ffffff", "content": "#d0ffd8", "accent": "#90ee90"},
+}
 
 SAMPLES_DIR = Path("samples")
 OUTPUT_DIR = Path("output")
@@ -291,6 +299,101 @@ def build_pptx(slide_data):
     prs.save(output)
     output.seek(0)
     return output.getvalue()
+
+
+def hex_to_rgb(hex_color):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+
+def get_font(size):
+    font_paths = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    ]
+    for p in font_paths:
+        if os.path.exists(p):
+            return ImageFont.truetype(p, size)
+    return ImageFont.load_default()
+
+
+def wrap_text(text, font, max_width, draw):
+    lines, line = [], ""
+    for ch in text:
+        test = line + ch
+        if draw.textlength(test, font=font) > max_width:
+            lines.append(line)
+            line = ch
+        else:
+            line = test
+    if line:
+        lines.append(line)
+    return lines
+
+
+def build_png_slides(slide_data, design):
+    """slide_dataとdesignからPNG画像リストを生成する。"""
+    W, H = 1920, 1080
+    bg  = hex_to_rgb(design["bg"])
+    tc  = hex_to_rgb(design["title"])
+    cc  = hex_to_rgb(design["content"])
+    ac  = hex_to_rgb(design["accent"])
+
+    font_title_main = get_font(80)
+    font_title      = get_font(56)
+    font_content    = get_font(38)
+
+    images = []
+
+    # タイトルスライド
+    img = Image.new("RGB", (W, H), bg)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([0, H//2 - 6, W, H//2 + 6], fill=ac)
+    title_text = slide_data.get("title", "")
+    draw.text((W // 2, H // 2 - 60), title_text, font=font_title_main, fill=tc, anchor="mm")
+    images.append(img)
+
+    # コンテンツスライド
+    for slide_info in slide_data.get("slides", []):
+        img = Image.new("RGB", (W, H), bg)
+        draw = ImageDraw.Draw(img)
+
+        # アクセントバー（上部）
+        draw.rectangle([0, 0, W, 14], fill=ac)
+
+        # タイトル
+        draw.text((80, 60), slide_info.get("title", ""), font=font_title, fill=tc)
+
+        # 区切り線
+        draw.rectangle([80, 160, W - 80, 168], fill=ac)
+
+        # 箇条書き
+        y = 210
+        for item in slide_info.get("content", []):
+            wrapped = wrap_text(f"  •  {item}", font_content, W - 200, draw)
+            for line in wrapped:
+                draw.text((100, y), line, font=font_content, fill=cc)
+                y += 58
+            y += 10
+
+        images.append(img)
+
+    return images
+
+
+def build_png_zip(images, display_name):
+    """PNG画像リストをZIPにまとめてバイナリを返す。"""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, img in enumerate(images):
+            img_buf = BytesIO()
+            img.save(img_buf, format="PNG")
+            zf.writestr(f"slide_{i+1:03d}.png", img_buf.getvalue())
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def save_script(script, product_name):
@@ -673,7 +776,29 @@ if "current_script" in st.session_state:
     # ── スライド生成 ──────────────────────────────────────────────────────────
     st.divider()
     st.subheader("スライド作成")
-    st.caption("台本が完成したらYouTube横動画用のPowerPointスライドを自動生成します（16:9）")
+    st.caption("台本が完成したらYouTube横動画用スライドを自動生成します（16:9 / 1920×1080）")
+
+    # デザイン設定
+    col_d1, col_d2 = st.columns([2, 3])
+    with col_d1:
+        design_preset = st.selectbox("デザインプリセット", list(DESIGN_PRESETS.keys()) + ["カスタム"])
+    if design_preset == "カスタム":
+        with col_d2:
+            dc1, dc2, dc3, dc4 = st.columns(4)
+            bg_c    = dc1.color_picker("背景色",     "#1a1a1a")
+            title_c = dc2.color_picker("タイトル色", "#ffffff")
+            cont_c  = dc3.color_picker("テキスト色", "#e0e0e0")
+            acc_c   = dc4.color_picker("アクセント色","#4a9eff")
+            design = {"bg": bg_c, "title": title_c, "content": cont_c, "accent": acc_c}
+    else:
+        design = DESIGN_PRESETS[design_preset]
+
+    # 出力形式
+    output_formats = st.multiselect(
+        "出力形式",
+        ["PPT (.pptx)", "PNG (.zip)"],
+        default=["PPT (.pptx)"],
+    )
 
     if st.button("スライドを作成する", use_container_width=True):
         try:
@@ -681,20 +806,113 @@ if "current_script" in st.session_state:
             with st.spinner("スライド構成を生成中..."):
                 slide_data = generate_slide_data(client, st.session_state.current_script)
 
+            st.session_state.slide_data = slide_data
+            st.session_state.slide_design = design
             slide_count = len(slide_data.get("slides", []))
             st.success(f"{slide_count} 枚のスライドを生成しました")
 
-            with st.spinner("PowerPointファイルを作成中..."):
-                pptx_bytes = build_pptx(slide_data)
-
             display_name = st.session_state.display_name
-            st.download_button(
-                "スライドをダウンロード (.pptx)",
-                data=pptx_bytes,
-                file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name}_slides.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                use_container_width=True,
-            )
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            if "PPT (.pptx)" in output_formats:
+                with st.spinner("PPTXを作成中..."):
+                    pptx_bytes = build_pptx(slide_data)
+                st.download_button(
+                    "PPTをダウンロード (.pptx)",
+                    data=pptx_bytes,
+                    file_name=f"{ts}_{display_name}_slides.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    use_container_width=True,
+                )
+
+            if "PNG (.zip)" in output_formats:
+                with st.spinner("PNG画像を生成中..."):
+                    images = build_png_slides(slide_data, design)
+                    zip_bytes = build_png_zip(images, display_name)
+                st.download_button(
+                    "PNGをダウンロード (.zip)",
+                    data=zip_bytes,
+                    file_name=f"{ts}_{display_name}_slides_png.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                )
 
         except Exception as e:
             st.error(f"スライド生成エラー: {e}")
+
+    # ── スライド修正 ──────────────────────────────────────────────────────────
+    if "slide_data" in st.session_state:
+        st.divider()
+        st.subheader("スライド修正")
+        st.caption("生成したスライドに修正指示を出して再生成できます")
+
+        slide_edit = st.text_area(
+            "修正指示",
+            placeholder="例：スライド3のタイトルを変えて\n例：箇条書きをもっと短くして\n例：スライドを5枚追加して",
+            height=100,
+            key="slide_edit_instruction",
+        )
+
+        if st.button("スライドを修正する", use_container_width=True):
+            if not slide_edit.strip():
+                st.warning("修正指示を入力してください")
+            else:
+                try:
+                    client = anthropic.Anthropic(api_key=api_key)
+                    current_json = json.dumps(st.session_state.slide_data, ensure_ascii=False, indent=2)
+                    revise_prompt = f"""以下のスライドデータを修正指示に従って修正してください。
+
+## 現在のスライドデータ（JSON）
+{current_json}
+
+## 修正指示
+{slide_edit}
+
+## 出力ルール
+- JSONのみ出力。前後の説明文・コードブロック記号は不要。
+- 元のJSON構造を維持してください。"""
+
+                    with st.spinner("スライドを修正中..."):
+                        response = client.messages.create(
+                            model=MODEL,
+                            max_tokens=8192,
+                            messages=[{"role": "user", "content": revise_prompt}]
+                        )
+                        text = response.content[0].text
+                        match = re.search(r'\{.*\}', text, re.DOTALL)
+                        if not match:
+                            raise ValueError("修正データの生成に失敗しました")
+                        slide_data = json.loads(match.group())
+                        st.session_state.slide_data = slide_data
+
+                    slide_count = len(slide_data.get("slides", []))
+                    st.success(f"修正完了：{slide_count} 枚")
+                    design = st.session_state.get("slide_design", DESIGN_PRESETS["ダーク（黒背景・白文字）"])
+                    display_name = st.session_state.display_name
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                    if "PPT (.pptx)" in output_formats:
+                        pptx_bytes = build_pptx(slide_data)
+                        st.download_button(
+                            "修正済みPPTをダウンロード (.pptx)",
+                            data=pptx_bytes,
+                            file_name=f"{ts}_{display_name}_revised.pptx",
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                            use_container_width=True,
+                            key="dl_revised_pptx",
+                        )
+
+                    if "PNG (.zip)" in output_formats:
+                        images = build_png_slides(slide_data, design)
+                        zip_bytes = build_png_zip(images, display_name)
+                        st.download_button(
+                            "修正済みPNGをダウンロード (.zip)",
+                            data=zip_bytes,
+                            file_name=f"{ts}_{display_name}_revised_png.zip",
+                            mime="application/zip",
+                            use_container_width=True,
+                            key="dl_revised_png",
+                        )
+
+                except Exception as e:
+                    st.error(f"スライド修正エラー: {e}")
