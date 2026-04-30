@@ -604,12 +604,13 @@ def generate_slide_data(client, script):
 
 `episode`は必須。そのスライドが何話目かを整数で（1話完結ならすべて1）。"""
 
-    response = client.messages.create(
+    with client.messages.stream(
         model=MODEL,
         max_tokens=32000,
         thinking={"type": "adaptive"},
         messages=[{"role": "user", "content": prompt}]
-    )
+    ) as stream:
+        response = stream.get_final_message()
     # Adaptive Thinking使用時はthinkingブロックとtextブロックが混在する
     text = next((b.text for b in response.content if b.type == "text"), "")
     if not text:
