@@ -445,192 +445,263 @@ def search_trends(tavily_api_key, category, product_name):
 
 
 def generate_slide_data(client, script):
-    """Claudeに台本を渡してスライド構成をJSON形式で生成する。"""
-    # 台本の文字数から目標スライド枚数を算出（約120文字に1枚、最低15枚）
+    """Claudeに台本を渡してスライド構成をJSON形式で生成する（Adaptive Thinking使用）。"""
     char_count = len(script.replace(" ", "").replace("\n", ""))
     target_slides = max(15, char_count // 120)
 
-    prompt = f"""プロダクトローンチの台本です。
-この台本をよりポップにわかりやすく伝わりやすくするためのプレゼンテーションを作ってください。
-プロのデザイナーが作ったような、デザインにしてください。
-下部にはテロップが入るのでスペースを空けてください。
-動画に同期してわかりやすくするため文字の配置などはあまり変わりすぎないほうがいいです。
-台本の内容に沿ったイメージイラスト・絵文字が入ってると尚良いです。
+    prompt = f"""以下のプロダクトローンチ台本を、動画に同期するプレゼンテーションスライドに変換してください。
 
 ## 台本
 {script}
 
-## スライド枚数について
-- 台本のセクションや話題の切れ目ごとに1枚作成してください
-- 目標枚数は **{target_slides}枚以上**。台本が長ければさらに増やしてください
-- 1枚あたりのナレーション量は2〜4文程度が目安です
+---
 
-## レイアウト指定（各スライドに必ず `layout` を指定してください）
-- `"impact"` ：重要なメッセージを画面中央に大きく表示。数字・キャッチコピー・価格・CTAに使う
-- `"section"` ：話題の切れ目・章タイトル用。タイトルを大きく中央に配置しセクション感を出す
-- `"standard"` ：タイトル＋箇条書きの標準レイアウト。説明・機能紹介・利用者の声などに使う
+## スライド設計の原則
 
-## 最終確認（出力前に必ず）
-- デザインが崩れていないか（タイトルと本文が重複していないか）
-- イメージ絵文字は台本内容とマッチしているか
-- 文字化けしそうな特殊文字が含まれていないか
-- スライド枚数が{target_slides}枚以上あるか
-- impact / section / standard をバランスよく使い分けているか
+### 枚数・密度
+- 目標: **{target_slides}枚以上**（台本の話題転換・セクション区切りごとに1枚）
+- 1スライド1メッセージ。詰め込みすぎない
 
-## 出力形式
-JSONのみ出力してください。説明文・コードブロック記号（```）は不要です。
+### レイアウト使い分け（必ず適切に選ぶこと）
+- **impact**: 数字・価格・CTA・感情的クライマックス・衝撃的な一言。全体の約30%
+- **section**: 大きな話題転換・章の区切り・「では次に〜」の瞬間。全体の約20%
+- **standard**: 複数ポイントの説明・機能・利用者の声・Q&A。全体の約50%
+
+### タイトルの書き方（最重要）
+- **20文字以内の断言文**
+- NG（抽象）: 「商品の特徴について」
+- OK（具体）: 「元手2万円で始められる」「97%が知らない勝ち筋」
+- 数字・疑問・感嘆を積極活用: 「月利10%、3ヶ月で実証」「なぜ今すぐ動くべきか」
+
+### contentの書き方
+- impact / section: 0〜1個（補足のみ、なくてもよい）
+- standard: 2〜4個の箇条書き
+- 各項目は**20文字以内**、体言止めか短い断言文
+- NG: 「〜することができます」 → OK: 「〜を実現」「〜の秘密」「〜で解決」
+
+### 絵文字
+- 台本の感情・内容に正確に合ったもの1つ
+- 数字スライドは📊💰、感情スライドは😤💡、CTAは🔥⚡ など
+
+---
+
+## 出力形式（JSONのみ。説明文・コードブロック記号不要）
 
 {{
-  "title": "動画タイトル",
+  "title": "動画シリーズのタイトル",
   "slides": [
     {{
       "episode": 1,
       "layout": "impact",
       "title": "スライドタイトル（20文字以内）",
-      "content": ["サブテキスト（impact/sectionは0〜2個、standardは最大4個）"],
+      "content": ["補足テキスト（短く）"],
       "emoji": "📈",
-      "notes": "このスライドに対応する台本の該当部分（抜粋）"
+      "notes": "台本の該当箇所の抜粋"
     }}
   ]
 }}
 
-`episode` フィールドは必須です。そのスライドが何話目の内容かを整数で記入してください（1話完結の場合はすべて 1）。"""
+`episode`は必須。そのスライドが何話目かを整数で（1話完結ならすべて1）。"""
 
     response = client.messages.create(
         model=MODEL,
         max_tokens=16000,
+        thinking={"type": "adaptive"},
         messages=[{"role": "user", "content": prompt}]
     )
-    text = response.content[0].text
+    # Adaptive Thinking使用時はthinkingブロックとtextブロックが混在する
+    text = next((b.text for b in response.content if b.type == "text"), "")
+    if not text:
+        raise ValueError("スライドデータの生成に失敗しました")
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if not match:
-        raise ValueError("スライドデータの生成に失敗しました")
+        raise ValueError("スライドデータのJSON抽出に失敗しました")
     return json.loads(match.group())
 
 
 def build_pptx(slide_data, design, pptx_size=(13.33, 7.5)):
-    """slide_dataとdesignからデザイン適用済みPPTXバイナリを生成して返す。"""
+    """高品質PPTXを生成する。レイアウト3種・装飾要素・テキスト階層を強化。"""
     W, H = pptx_size
+    landscape = W >= H
 
     prs = Presentation()
     prs.slide_width  = Inches(W)
     prs.slide_height = Inches(H)
-
-    blank = prs.slide_layouts[6]  # 完全ブランクレイアウト
+    blank = prs.slide_layouts[6]
 
     def _rgb(hex_color):
         h = hex_color.lstrip("#")
         return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
-    bg_rgb    = _rgb(design["bg"])
-    title_rgb = _rgb(design["title"])
-    cont_rgb  = _rgb(design["content"])
-    acc_rgb   = _rgb(design["accent"])
+    bg_rgb  = _rgb(design["bg"])
+    tc_rgb  = _rgb(design["title"])
+    cc_rgb  = _rgb(design["content"])
+    acc_rgb = _rgb(design["accent"])
 
     def set_bg(slide):
         fill = slide.background.fill
         fill.solid()
         fill.fore_color.rgb = bg_rgb
 
-    def add_rect(slide, left, top, width, height, color):
-        shape = slide.shapes.add_shape(1, Inches(left), Inches(top), Inches(width), Inches(height))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = color
-        shape.line.fill.background()
-        return shape
+    def R(slide, l, t, w, h, color):
+        """塗りつぶし矩形を追加する。"""
+        shp = slide.shapes.add_shape(1, Inches(l), Inches(t), Inches(w), Inches(h))
+        shp.fill.solid()
+        shp.fill.fore_color.rgb = color
+        shp.line.fill.background()
+        return shp
 
-    def add_textbox(slide, text, left, top, width, height, font_size, color, bold=False, align=PP_ALIGN.LEFT):
-        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
-        tf = txBox.text_frame
+    def T(slide, text, l, t, w, h, pt, color, bold=False, align=PP_ALIGN.LEFT):
+        """テキストボックスを追加する。"""
+        tb = slide.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h))
+        tf = tb.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.alignment = align
+        p.space_before = Pt(0)
         run = p.add_run()
         run.text = text
-        run.font.size = Pt(font_size)
+        run.font.size = Pt(pt)
         run.font.color.rgb = color
         run.font.bold = bold
+        return tb
 
-    def add_bullets(slide, items, left, top, width, height, font_size, color):
-        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
-        tf = txBox.text_frame
+    def B(slide, items, l, t, w, h, pt, color):
+        """箇条書きテキストボックスを追加する（行間・段落間を整える）。"""
+        tb = slide.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h))
+        tf = tb.text_frame
         tf.word_wrap = True
         for i, item in enumerate(items):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.space_before = Pt(8)
+            p.space_after  = Pt(2)
             run = p.add_run()
-            run.text = f"  •  {item}"
-            run.font.size = Pt(font_size)
+            run.text = f"▸  {item}"
+            run.font.size = Pt(pt)
             run.font.color.rgb = color
 
-    # 縦型か横型かでフォントサイズを調整
-    landscape = W > H
-    title_main_pt = 40 if landscape else 32
-    title_pt      = 28 if landscape else 22
-    content_pt    = 20 if landscape else 17
+    # ── サイズ適応フォント・寸法 ──
+    if landscape:
+        f_hero   = 48   # impactメインタイトル
+        f_title  = 32   # section/standardタイトル
+        f_body   = 21   # 本文・箇条書き
+        f_sub    = 18   # サブテキスト
+        f_label  = 13   # 小ラベル
+        bar      = 0.18 # アクセントバー高さ（インチ）
+        lbar     = 0.28 # 太い左バー幅
+        sep      = 0.04 # 細いセパレータ
+    else:
+        f_hero   = 36
+        f_title  = 25
+        f_body   = 17
+        f_sub    = 15
+        f_label  = 11
+        bar      = 0.13
+        lbar     = 0.20
+        sep      = 0.03
 
-    # ── タイトルスライド ──
+    # ════════════════════════════════════════
+    # タイトルスライド
+    # ════════════════════════════════════════
     slide = prs.slides.add_slide(blank)
     set_bg(slide)
-    add_rect(slide, 0, H / 2 - 0.06, W, 0.12, acc_rgb)
-    add_textbox(slide, slide_data.get("title", ""),
-                0.5, H / 2 - 1.3, W - 1, 1.1,
-                title_main_pt, title_rgb, bold=True, align=PP_ALIGN.CENTER)
+    # 上部アクセントバー
+    R(slide, 0, 0, W, bar * 1.5, acc_rgb)
+    # 下部アクセントエリア（太め）
+    R(slide, 0, H - bar * 2.5, W, bar * 2.5, acc_rgb)
+    # タイトル（中央寄せ）
+    T(slide, slide_data.get("title", ""),
+      W * 0.05, H * 0.22, W * 0.9, H * 0.48,
+      f_hero, tc_rgb, bold=True, align=PP_ALIGN.CENTER)
+    # タイトル下の装飾ライン
+    R(slide, W * 0.3, H * 0.72, W * 0.4, sep, acc_rgb)
 
-    # ── コンテンツスライド ──
+    # ════════════════════════════════════════
+    # コンテンツスライド
+    # ════════════════════════════════════════
     for slide_info in slide_data.get("slides", []):
         slide = prs.slides.add_slide(blank)
         set_bg(slide)
 
-        layout        = slide_info.get("layout", "standard")
-        emoji         = slide_info.get("emoji", "")
-        raw_title     = slide_info.get("title", "")
-        content_items = slide_info.get("content", [])
+        layout  = slide_info.get("layout", "standard")
+        emoji   = slide_info.get("emoji", "")
+        title   = slide_info.get("title", "")
+        content = slide_info.get("content", [])
 
+        # ────────────────────────────────────
+        # IMPACT レイアウト
+        # 上下太バー + 左右細ライン + 中央大テキスト
+        # ────────────────────────────────────
         if layout == "impact":
-            # ── インパクト：中央大テキスト ──
-            bw = 0.12
-            add_rect(slide, 0,     0,     W,  bw, acc_rgb)
-            add_rect(slide, 0,     H - bw, W, bw, acc_rgb)
-            add_rect(slide, 0,     0,     bw, H,  acc_rgb)
-            add_rect(slide, W - bw, 0,    bw, H,  acc_rgb)
-            if emoji:
-                add_textbox(slide, emoji, 0.4, 0.2, 1.2, 0.7, title_pt - 4, acc_rgb)
-            center_top = H * 0.28 if content_items else H * 0.35
-            add_textbox(slide, raw_title,
-                        0.5, center_top, W - 1, H * 0.38,
-                        title_pt + 10, title_rgb, bold=True, align=PP_ALIGN.CENTER)
-            if content_items:
-                sub = "  •  ".join(content_items[:2])
-                add_textbox(slide, sub,
-                            0.5, center_top + H * 0.4, W - 1, 0.9,
-                            content_pt + 2, cont_rgb, align=PP_ALIGN.CENTER)
+            R(slide, 0, 0,           W, bar * 1.8,  acc_rgb)   # 上バー
+            R(slide, 0, H - bar * 1.8, W, bar * 1.8, acc_rgb) # 下バー
+            R(slide, 0, bar * 1.8,   sep, H - bar * 3.6, acc_rgb)          # 左細ライン
+            R(slide, W - sep, bar * 1.8, sep, H - bar * 3.6, acc_rgb)      # 右細ライン
 
+            if emoji:
+                T(slide, emoji,
+                  sep + 0.18, bar * 1.8 + 0.12, 0.75, bar * 1.5,
+                  f_title - 4, acc_rgb)
+
+            has_sub = bool(content)
+            ty = H * 0.25 if has_sub else H * 0.31
+            # メインタイトル（特大・太字）
+            T(slide, title,
+              sep + 0.3, ty, W - sep * 2 - 0.6, H * 0.38,
+              f_hero + 4, tc_rgb, bold=True, align=PP_ALIGN.CENTER)
+            # タイトル下のアクセントライン
+            R(slide, W * 0.37, ty + H * 0.38 + 0.06, W * 0.26, sep, acc_rgb)
+            # サブテキスト
+            if has_sub:
+                sub = "　•　".join(content[:2])
+                T(slide, sub,
+                  sep + 0.3, ty + H * 0.38 + 0.14, W - sep * 2 - 0.6, 0.7,
+                  f_sub + 1, cc_rgb, align=PP_ALIGN.CENTER)
+
+        # ────────────────────────────────────
+        # SECTION レイアウト
+        # 左太バー + 上下水平ライン + 中央タイトル
+        # ────────────────────────────────────
         elif layout == "section":
-            # ── セクション：左バー＋中央タイトル ──
-            add_rect(slide, 0, 0, 0.22, H, acc_rgb)
-            add_rect(slide, 0, 0, W, 0.1, acc_rgb)
-            add_rect(slide, 0, H - 0.12, W, 0.12, acc_rgb)
-            emoji_offset = 0.7 if emoji else 0
-            if emoji:
-                add_textbox(slide, emoji,
-                            W / 2 - 0.4, H / 2 - 1.1, 0.8, 0.7,
-                            title_pt + 4, acc_rgb, align=PP_ALIGN.CENTER)
-            add_textbox(slide, raw_title,
-                        0.5, H / 2 - 0.55 + emoji_offset, W - 1, 1.3,
-                        title_pt + 6, title_rgb, bold=True, align=PP_ALIGN.CENTER)
-            if content_items:
-                add_textbox(slide, content_items[0],
-                            0.5, H / 2 + 0.85 + emoji_offset, W - 1, 0.7,
-                            content_pt, cont_rgb, align=PP_ALIGN.CENTER)
+            R(slide, 0, 0,         lbar, H, acc_rgb)             # 左太バー
+            R(slide, lbar, bar * 0.6, W - lbar, sep, acc_rgb)    # 上ライン
+            R(slide, lbar, H - bar * 0.9, W - lbar, sep, acc_rgb) # 下ライン
 
+            e_off = 0
+            if emoji:
+                T(slide, emoji,
+                  W * 0.5 - 0.3, H * 0.26, 0.75, 0.6,
+                  f_hero - 10, acc_rgb, align=PP_ALIGN.CENTER)
+                e_off = 0.62
+            # セクションタイトル（大・太字・中央）
+            T(slide, title,
+              lbar + 0.35, H * 0.38 + e_off, W - lbar - 0.5, H * 0.3,
+              f_title + 8, tc_rgb, bold=True, align=PP_ALIGN.CENTER)
+            if content:
+                T(slide, content[0],
+                  lbar + 0.35, H * 0.70 + e_off, W - lbar - 0.5, 0.55,
+                  f_sub, cc_rgb, align=PP_ALIGN.CENTER)
+
+        # ────────────────────────────────────
+        # STANDARD レイアウト
+        # 上バー + 左細ストライプ + タイトル + 区切り線 + 箇条書き
+        # ────────────────────────────────────
         else:
-            # ── standard：上バー＋左揃えタイトル＋箇条書き ──
-            add_rect(slide, 0, 0, W, 0.12, acc_rgb)
-            title_text = f"{emoji}  {raw_title}" if emoji else raw_title
-            add_textbox(slide, title_text, 0.4, 0.22, W - 0.8, 0.85, title_pt, title_rgb, bold=True)
-            add_rect(slide, 0.4, 1.15, W - 0.8, 0.05, acc_rgb)
-            if content_items:
-                add_bullets(slide, content_items, 0.5, 1.3, W - 1, H - 1.7, content_pt, cont_rgb)
+            R(slide, 0, 0,    W, bar, acc_rgb)           # 上アクセントバー
+            R(slide, 0, bar,  sep * 1.5, H - bar, acc_rgb)  # 左細ストライプ
+
+            title_str = f"{emoji}  {title}" if emoji else title
+            T(slide, title_str,
+              sep * 1.5 + 0.2, bar + 0.12, W - sep * 1.5 - 0.3, 0.95,
+              f_title, tc_rgb, bold=True)
+
+            sep_y = bar + 1.1
+            R(slide, sep * 1.5 + 0.2, sep_y, W - sep * 1.5 - 0.35, sep, acc_rgb)
+
+            if content:
+                B(slide, content,
+                  sep * 1.5 + 0.28, sep_y + 0.14, W - sep * 1.5 - 0.45, H - sep_y - 0.2,
+                  f_body, cc_rgb)
 
         # スピーカーノート
         notes = slide_info.get("notes", "")
