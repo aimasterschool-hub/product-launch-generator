@@ -471,6 +471,64 @@ def try_parse_json(text):
     )
 
 
+SLIDE_CHUNK_MAX_CHARS = 4500  # このサイズ以下に収まるよう台本を分割（約15分相当）
+
+
+def split_script_into_chunks(script):
+    """台本を話数・長さで分割してチャンクリストを返す。
+
+    戻り値: [(episode_num, chunk_label, chunk_text), ...]
+    - 第N話マーカーがあれば話数ごとに分割
+    - 1チャンクが SLIDE_CHUNK_MAX_CHARS を超える場合は前半/後半/パートN でさらに分割
+    """
+    # ── 話数マーカーで分割 ──
+    ep_pattern = re.compile(r'(?:^|\n)(【?第\s*(\d+)\s*話[^\n]*)', re.MULTILINE)
+    ep_matches = list(ep_pattern.finditer(script))
+
+    if len(ep_matches) >= 2:
+        ep_texts = {}
+        for i, m in enumerate(ep_matches):
+            ep_num = int(m.group(2))
+            start = m.start()
+            end = ep_matches[i + 1].start() if i + 1 < len(ep_matches) else len(script)
+            ep_texts[ep_num] = script[start:end].strip()
+    else:
+        ep_texts = {1: script}
+
+    # ── 各話を長さでさらに分割 ──
+    result = []
+    for ep_num, ep_text in sorted(ep_texts.items()):
+        ep_label_base = f"第{ep_num}話" if len(ep_texts) > 1 else "全体"
+
+        if len(ep_text) <= SLIDE_CHUNK_MAX_CHARS:
+            result.append((ep_num, ep_label_base, ep_text))
+            continue
+
+        # 段落単位で SLIDE_CHUNK_MAX_CHARS 以下のチャンクに分割
+        paras = re.split(r'\n\n+', ep_text)
+        chunks_text, cur, cur_len = [], [], 0
+        for para in paras:
+            if cur_len + len(para) > SLIDE_CHUNK_MAX_CHARS and cur:
+                chunks_text.append('\n\n'.join(cur))
+                cur, cur_len = [para], len(para)
+            else:
+                cur.append(para)
+                cur_len += len(para)
+        if cur:
+            chunks_text.append('\n\n'.join(cur))
+
+        n = len(chunks_text)
+        part_labels = (
+            ["前半", "後半"] if n == 2
+            else [f"パート{j+1}" for j in range(n)]
+        )
+        for ci, chunk in enumerate(chunks_text):
+            label = f"{ep_label_base} {part_labels[ci]}"
+            result.append((ep_num, label, chunk))
+
+    return result
+
+
 def search_trends(tavily_api_key, category, product_name):
     """カテゴリと商品名に関連する最新トレンドをWeb検索して返す。"""
     try:
@@ -1572,15 +1630,42 @@ if "current_script" in st.session_state:
     if st.button("スライドを作成する", use_container_width=True):
         try:
             client = anthropic.Anthropic(api_key=api_key)
-            with st.spinner("スライド構成を生成中..."):
-                slide_data = generate_slide_data(client, st.session_state.current_script)
-            st.session_state.slide_data         = slide_data
-            st.session_state.slide_design       = design
-            st.session_state.slide_format       = slide_format
+            chunks = split_script_into_chunks(st.session_state.current_script)
+            total  = len(chunks)
+
+            # 分割内容を事前に表示
+            if total > 1:
+                labels = " / ".join(lbl for _, lbl, _ in chunks)
+                st.info(f"台本を **{total} 分割** して順番に生成します：{labels}")
+
+            progress = st.progress(0)
+            status   = st.empty()
+
+            all_slides  = []
+            video_title = ""
+
+            for i, (ep_num, label, chunk_text) in enumerate(chunks):
+                status.text(f"生成中：{label}（{i + 1} / {total}）")
+                chunk_data = generate_slide_data(client, chunk_text)
+
+                if not video_title:
+                    video_title = chunk_data.get("title", "")
+
+                for slide in chunk_data.get("slides", []):
+                    slide["episode"] = ep_num
+                    all_slides.append(slide)
+
+                progress.progress((i + 1) / total)
+
+            status.text("✅ 全チャンク生成完了！")
+            slide_data = {"title": video_title, "slides": all_slides}
+
+            st.session_state.slide_data           = slide_data
+            st.session_state.slide_design         = design
+            st.session_state.slide_format         = slide_format
             st.session_state.slide_output_formats = output_formats
-            st.session_state.slide_preview_ready = True
-            st.session_state.slide_approved      = False
-            # 生成済みバイトをリセット
+            st.session_state.slide_preview_ready  = True
+            st.session_state.slide_approved       = False
             for k in ("slide_pptx_bytes", "slide_zip_bytes", "slide_output_ts"):
                 st.session_state.pop(k, None)
             st.rerun()
