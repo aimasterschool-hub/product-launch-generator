@@ -82,6 +82,7 @@ def clear_form_state():
         "consultation_method",
         "regular_price", "special_price",
         "limited_time", "limited_seats", "bonuses", "notes",
+        "seller_story", "mechanism", "vs_competition", "before_after",
     ]:
         st.session_state[f"f_{k}"] = ""
 
@@ -189,6 +190,54 @@ SUCCESS_FRAMEWORK = """
 #### 特別編（ダウンセル／救済クロージング）
 - ハードル再調整：「価格で諦めた方へ」として機能を絞ったライト版・分割払いを再提案
 - 取りこぼしの回収：本編で決断できなかった層に最後のチャンスを提供
+
+---
+
+### ライティング品質の基準
+
+#### ① 数字の具体化ルール（必須）
+抽象的な表現は必ず具体的な数字・期間・固有名詞に変換すること。
+
+| NG（抽象）               | OK（具体）                        |
+|--------------------------|-----------------------------------|
+| 多くの人が               | 3,000名以上が                     |
+| すぐに成果が出る         | 最短3日で、導入1週間で            |
+| 大きな利益が出た         | 3ヶ月で31万円の利益               |
+| 安く始められる           | 証拠金2万円から                   |
+| 長年の実績               | 5年間・1,500本以上の動画で実証    |
+| 高い勝率                 | 勝率78%、直近3ヶ月の実績          |
+
+- 実績数値は「期間＋金額」をセットで使う
+- 割合は「分母」も示す（「10人中8人」「導入者の85%が」）
+- 曖昧な時制はNG → 「〇月〇日までの限定価格」
+
+#### ② 感情の起伏設計（話数ごと）
+視聴者の感情は「平坦」ではなく、意図的に上下させること。
+
+- **第1話の感情グラフ**
+  驚き・衝撃 → 危機感・焦り → 希望・ワクワク → 期待感（次回予告）
+
+- **第2話の感情グラフ**
+  共感・安心 → 知的納得 → 「自分でもできる」という確信 → 欲求の高まり
+
+- **第3話の感情グラフ**
+  価値への興奮 → 「今すぐ手に入れたい」 → 「やらない自分への後悔」 → 決断・行動
+
+- **各話の感情ピーク**: 必ず1〜2箇所、視聴者が「おお！」と声に出すような強烈な一言・数字・ストーリーを配置すること
+
+#### ③ 文章リズムの設計
+台本は「読まれる文章」ではなく「聞かれる音声」。リズムが命。
+
+- **基本パターン**: 短文 → 中文 → 短文 → 疑問文 → 短文
+  例：「信じられないですよね。でも、これは実際に起きた話です。元手は、たった2万円でした。なぜ、こんなことが可能なのか？答えは、AIにあります。」
+
+- **強調したい言葉の前後に必ず「間（ま）」を入れる**
+  例：「この数字を見てください。……3ヶ月で、31万円。」
+
+- **疑問文で視聴者を引き込む**
+  セクションの冒頭は「〜だと思いませんか？」「〜したことはありますか？」で始めると視聴者が答えを探して聞き続ける
+
+- **文末のバリエーション**: 「〜です」が3文連続するのはNG。「〜なんです」「〜ました」「〜ですよね」「〜でしょうか」を混ぜる
 """
 
 
@@ -328,12 +377,14 @@ def build_user_prompt(info):
         f"**販売者のプロフィール**: {info.get('seller_profile', '')}",
         f"**インタビュアープロフィール**: {info.get('interviewer_profile', '')}",
         f"**販売者の権威・実績**: {info.get('seller_authority', '')}",
+        f"**原体験・どん底ストーリー**: {info.get('seller_story', '')}",
         f"**キャッチコピー**: {info.get('catchcopy', '')}",
         f"**ターゲット層**: {info.get('target_audience', '')}",
         f"**実績数値①（短期）**: {info.get('result1', '')}",
         f"**実績数値②（中〜長期）**: {info.get('result2', '')}",
         f"**月利 / 月収目安**: {info.get('monthly_return', '')}",
         f"**始めやすさの根拠**: {info.get('ease_of_start', '')}",
+        f"**独自メカニズム・勝てる理由**: {info.get('mechanism', '')}",
         "",
         "**商品の強み**:",
         strengths_str,
@@ -344,6 +395,8 @@ def build_user_prompt(info):
         "## 社会背景・痛み訴求",
         f"**視聴者のペイン**: {info.get('pain_points', '')}",
         f"**なぜ今必要か（why now）**: {info.get('why_now', '')}",
+        f"**競合との違い・失敗体験との対比**: {info.get('vs_competition', '')}",
+        f"**購入後のビフォーアフター**: {info.get('before_after', '')}",
         "",
         "## 第三者・信頼性",
         f"**第三者の種類**: {info.get('third_party_type', 'なし')}",
@@ -1223,6 +1276,11 @@ with st.form("product_form"):
             height=80, key="f_interviewer_profile",
         )
         seller_authority = st.text_input("販売者の権威・実績", placeholder="例：FX系YouTuber、動画1500本以上、5年以上活動", key="f_seller_authority")
+        seller_story = st.text_area(
+            "原体験・どん底ストーリー",
+            placeholder="例：会社員時代にFXで300万円溶かし借金生活に。毎晩眠れない日々が続いた。そこで偶然ある手法に出会い、半年で完済。その経験を体系化したのがこのシステム。",
+            height=110, key="f_seller_story",
+        )
     with col2:
         catchcopy = st.text_input("キャッチコピー", placeholder="例：月5分で月10万円", key="f_catchcopy")
         target_audience = st.text_input("ターゲット層", placeholder="例：投資初心者、副業したい人", key="f_target_audience")
@@ -1230,6 +1288,11 @@ with st.form("product_form"):
         result2 = st.text_input("実績数値②", placeholder="例：1年で125万円の利益", key="f_result2")
         monthly_return = st.text_input("月利 / 月収目安", placeholder="例：月利10%、月10万円", key="f_monthly_return")
         ease_of_start = st.text_input("始めやすさの根拠", placeholder="例：2万円から、スマホだけでOK", key="f_ease_of_start")
+        mechanism = st.text_area(
+            "独自メカニズム・勝てる理由",
+            placeholder="例：2万通りの相場パターンをAIが学習。プロアナリストが検証した上位3%のシグナルのみを抽出して自動売買。完全放置でも機能する理由はここにある。",
+            height=110, key="f_mechanism",
+        )
 
     st.markdown("**商品の強み**（入力した分だけ使用）")
     s_cols = st.columns(4)
@@ -1262,6 +1325,19 @@ with st.form("product_form"):
         pain_points = st.text_area("視聴者のペイン", placeholder="例：残業しても給料が上がらない、将来が不安、副業する時間がない", height=100, key="f_pain_points")
     with col4:
         why_now = st.text_area("なぜ今必要か（why now）", placeholder="例：物価は上がるのに賃金は上がらない。自分で資産を作るしかない。", height=100, key="f_why_now")
+    col5, col6 = st.columns(2)
+    with col5:
+        vs_competition = st.text_area(
+            "競合との違い・失敗体験との対比",
+            placeholder="例：他の自動売買は設定が複雑で初心者が挫折しやすい。このシステムは設定を代行してくれるので、届いた当日から稼働できる。",
+            height=100, key="f_vs_competition",
+        )
+    with col6:
+        before_after = st.text_area(
+            "購入後のビフォーアフター",
+            placeholder="例：Before：毎朝5時起きでチャートを見ながら出勤。After：朝ゆっくり起きてスマホで確認するだけ。家族との時間が増えた。",
+            height=100, key="f_before_after",
+        )
 
     st.divider()
 
@@ -1485,6 +1561,8 @@ if submitted:
         "strengths": strengths,
         "voices": [voice1, voice2, voice3],
         "pain_points": pain_points, "why_now": why_now,
+        "vs_competition": vs_competition, "before_after": before_after,
+        "seller_story": seller_story, "mechanism": mechanism,
         "third_party_type": third_party_type, "third_party_name": third_party_name,
         "third_party_points": third_party_points,
         "regular_price": regular_price, "special_price": special_price,
