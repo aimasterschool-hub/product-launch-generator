@@ -481,6 +481,142 @@ def build_user_prompt(info):
     return "\n".join(lines)
 
 
+def build_info_from_session():
+    """セッションステートからフォーム入力値を収集してinfoディクショナリを返す（フォーム外から呼ぶ用）。"""
+    ss = st.session_state
+    return {
+        "structure_type":    ss.get("f_structure_type", "従来型"),
+        "include_knowhow":   ss.get("f_include_knowhow", False),
+        "knowhow_theme":     ss.get("f_knowhow_theme", ""),
+        "knowhow_notes":     ss.get("f_knowhow_notes", ""),
+        "name":              ss.get("f_name", ""),
+        "category":          ss.get("f_category", ""),
+        "seller_name":       ss.get("f_seller_name", ""),
+        "seller_profile":    ss.get("f_seller_profile", ""),
+        "interviewer_name":  ss.get("f_interviewer_name", ""),
+        "interviewer_profile": ss.get("f_interviewer_profile", ""),
+        "seller_authority":  ss.get("f_seller_authority", ""),
+        "seller_story":      ss.get("f_seller_story", ""),
+        "catchcopy":         ss.get("f_catchcopy", ""),
+        "target_audience":   ss.get("f_target_audience", ""),
+        "result1":           ss.get("f_result1", ""),
+        "result2":           ss.get("f_result2", ""),
+        "monthly_return":    ss.get("f_monthly_return", ""),
+        "ease_of_start":     ss.get("f_ease_of_start", ""),
+        "mechanism":         ss.get("f_mechanism", ""),
+        "strengths":         [ss.get(f"str_{i}", "") for i in range(4)],
+        "voices":            [ss.get(f"f_voice{i+1}", "") for i in range(3)],
+        "pain_points":       ss.get("f_pain_points", ""),
+        "why_now":           ss.get("f_why_now", ""),
+        "vs_competition":    ss.get("f_vs_competition", ""),
+        "before_after":      ss.get("f_before_after", ""),
+        "third_party_type":  ss.get("f_third_party_type", "なし"),
+        "third_party_name":  ss.get("f_third_party_name", ""),
+        "third_party_points": ss.get("f_third_party_points", ""),
+        "regular_price":     ss.get("f_regular_price", ""),
+        "special_price":     ss.get("f_special_price", ""),
+        "limited_time":      ss.get("f_limited_time", ""),
+        "limited_seats":     ss.get("f_limited_seats", ""),
+        "installment":       ss.get("f_installment", "なし"),
+        "bonuses":           ss.get("f_bonuses", ""),
+        "comment_includes":  [ss.get(f"comment_include_{i}", True) for i in range(5)],
+        "comment_prompts":   [ss.get(f"comment_{i}", "") for i in range(5)],
+        "episode_structure": ss.get("f_episode_structure", "1話完結"),
+        "closing_strength":  ss.get("f_closing_strength", "標準"),
+        "video_duration":    ss.get("f_video_duration", "7分（約2,100文字）"),
+        "use_episode_themes": ss.get("f_use_episode_themes", False),
+        "episode_themes":    [ss.get(f"episode_theme_{i}", "") for i in range(5)],
+        "notes":             ss.get("f_notes", ""),
+        "sales_flow_type":   ss.get("f_sales_flow_type", "直接販売型"),
+        "sales_start_day":   ss.get("f_sales_start_day", "翌日（1日後）"),
+        "consultation_method": ss.get("f_consultation_method", ""),
+    }
+
+
+def build_outline_prompt(info):
+    """構成案（アウトライン）生成用プロンプト。台本の文章は書かせない。"""
+    base = build_user_prompt(info)
+    episode_structure = info.get("episode_structure", "1話完結")
+    episode_count = int(episode_structure[0]) if episode_structure[0].isdigit() else 1
+    video_duration = info.get("video_duration", "7分（約2,100文字）")
+
+    return f"""{base}
+
+---
+
+## 【出力指示：構成案（アウトライン）のみを出力してください】
+
+台本の文章は**絶対に書かないでください**。
+以下の形式で「骨格（アウトライン）」だけを出力してください。
+
+各セクションについて記載すること：
+1. セクション名と時間目安
+2. このセクションで伝えるポイント（箇条書き3〜5個）
+3. 使うべき具体的な数字・実績・エピソード
+4. 感情的な目標（視聴者にどう感じさせるか）
+
+---
+
+出力フォーマット：
+
+# 第1話：「[タイトル案]」（{video_duration}）
+
+## [1] オープニング・衝撃フック
+- 時間目安：〜XX分
+- ポイント：〇〇
+- 使う数字/エピソード：〇〇
+- 感情目標：視聴者が「え、本当に？続きが見たい」と感じる
+
+## [2] 社会背景・問題提起
+...
+
+---
+
+{episode_count}話分の構成案を全て出力してください。
+最後に「---構成案ここまで---」と書いてください。"""
+
+
+def build_script_from_outline_prompt(outline, info):
+    """承認済み構成案をもとに台本を生成するプロンプト。"""
+    video_duration = info.get("video_duration", "7分（約2,100文字）")
+    closing_strength = info.get("closing_strength", "標準")
+    interviewer = info.get("interviewer_name", "").strip()
+    dialogue_style = f"インタビュアー「{interviewer}」との対話形式" if interviewer else "一人語り（モノローグ）形式"
+    name = info.get("name", "")
+    seller_name = info.get("seller_name", "")
+    result1 = info.get("result1", "")
+    result2 = info.get("result2", "")
+    voices = [v for v in info.get("voices", []) if v]
+    voices_str = "\n".join(f"  - {v}" for v in voices) if voices else "  （なし）"
+
+    return f"""以下の【確定した構成案】に**厳密に従って**、プロダクトローンチ用の動画台本を生成してください。
+
+## 確定した構成案（この構成・順序・ポイントを全て反映すること）
+{outline}
+
+---
+
+## 商品情報（参照用）
+- 商品名：{name}
+- 販売者名：{seller_name}
+- 実績①：{result1}
+- 実績②：{result2}
+- 利用者の声：
+{voices_str}
+
+---
+
+## 生成ルール
+- 構成案のセクション順・ポイント・数字をすべて台本に反映すること
+- 1話あたりの目安：{video_duration}
+- 話し方スタイル：{dialogue_style}
+- クロージングの強度：{closing_strength}
+- 【セクション名 - タイムコード】の見出しで構成を明示すること
+- 【ナレーション】【インタビュアー】【販売者】【映像】などの役割表記を適切に使うこと
+- サンプル台本のスタイル・語り口・リズムを踏襲すること
+"""
+
+
 def try_parse_json(text):
     """テキストからJSONを抽出し、一般的な破損パターンを自動修復してパースする。"""
     match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -1480,7 +1616,7 @@ with st.form("product_form"):
         help="TavilyのAPIキーが設定されている場合に利用できます",
     )
 
-    submitted = st.form_submit_button("台本を生成する", type="primary", use_container_width=True)
+    submitted = st.form_submit_button("台本を生成する（通常モード）", type="primary", use_container_width=True)
 
 # ── 生成処理 ──────────────────────────────────────────────────────────────────
 
@@ -1614,6 +1750,108 @@ if submitted:
 
     except anthropic.APIError as e:
         st.error(f"APIエラー: {e}")
+
+
+# ── 高精度モード（2ステップ生成） ─────────────────────────────────────────────
+
+st.divider()
+with st.expander("高精度モード（2ステップ生成）", expanded=("outline_draft" in st.session_state)):
+    st.caption("① 構成案を生成 → 確認・編集 → ② 台本を生成。意図に沿った高品質な台本ができます。")
+
+    col_hq1, col_hq2 = st.columns(2)
+    with col_hq1:
+        gen_outline_btn = st.button("① 構成案を生成する", use_container_width=True, key="btn_gen_outline")
+    with col_hq2:
+        if "outline_draft" in st.session_state:
+            if st.button("構成案をクリアする", use_container_width=True, key="btn_clear_outline"):
+                st.session_state.pop("outline_draft", None)
+                st.session_state.pop("outline_info", None)
+                st.rerun()
+
+    if gen_outline_btn:
+        if not api_key:
+            st.error("APIキーを設定してください（サイドバー）")
+        else:
+            outline_info = build_info_from_session()
+            outline_prompt = build_outline_prompt(outline_info)
+            episode_num = int(outline_info.get("episode_structure", "1話完結")[0]) if outline_info.get("episode_structure", "1")[0].isdigit() else 1
+            outline_tokens = min(2000 * episode_num, 8000)
+            st.markdown("**構成案を生成中...**")
+            placeholder_o = st.empty()
+            outline_text = ""
+            try:
+                client_o = anthropic.Anthropic(api_key=api_key)
+                with client_o.messages.stream(
+                    model=MODEL,
+                    max_tokens=outline_tokens,
+                    system=st.session_state.system_blocks,
+                    messages=[{"role": "user", "content": outline_prompt}],
+                ) as stream:
+                    for text in stream.text_stream:
+                        outline_text += text
+                        placeholder_o.markdown(outline_text)
+                st.session_state["outline_draft"] = outline_text
+                st.session_state["outline_info"] = outline_info
+                st.rerun()
+            except anthropic.APIError as e:
+                st.error(f"APIエラー: {e}")
+
+    if "outline_draft" in st.session_state:
+        st.markdown("**構成案（自由に編集できます）**")
+        st.caption("内容・順序を確認・修正したら ② を押して台本を生成してください")
+        outline_edit = st.text_area(
+            "構成案",
+            value=st.session_state["outline_draft"],
+            height=520,
+            key="outline_edit",
+            label_visibility="collapsed",
+        )
+        gen_from_outline_btn = st.button(
+            "② この構成で台本を生成する",
+            type="primary",
+            use_container_width=True,
+            key="btn_gen_from_outline",
+        )
+        if gen_from_outline_btn:
+            if not api_key:
+                st.error("APIキーを設定してください（サイドバー）")
+            else:
+                outline_info2 = st.session_state.get("outline_info", build_info_from_session())
+                script_prompt2 = build_script_from_outline_prompt(outline_edit, outline_info2)
+                display_name2 = (outline_info2.get("name", "台本") or "台本") + "_高精度"
+                duration_key2 = outline_info2.get("video_duration", "7分（約2,100文字）").split("（")[0]
+                episode_num2 = int(outline_info2.get("episode_structure", "1話完結")[0]) if outline_info2.get("episode_structure", "1")[0].isdigit() else 1
+                base_tokens2 = DURATION_MAX_TOKENS.get(duration_key2, 4096)
+                max_tokens2 = min(base_tokens2 * episode_num2, 32000)
+                st.markdown("**台本を生成中...**")
+                placeholder2 = st.empty()
+                script2 = ""
+                try:
+                    client2 = anthropic.Anthropic(api_key=api_key)
+                    with client2.messages.stream(
+                        model=MODEL,
+                        max_tokens=max_tokens2,
+                        system=st.session_state.system_blocks,
+                        messages=[{"role": "user", "content": script_prompt2}],
+                    ) as stream:
+                        for text in stream.text_stream:
+                            script2 += text
+                            placeholder2.markdown(script2)
+                    st.session_state.current_script = script2
+                    st.session_state.display_name = display_name2
+                    st.session_state.last_info = outline_info2
+                    output_path2 = save_script(script2, display_name2)
+                    st.success(f"保存済み: {output_path2}")
+                    st.download_button(
+                        "台本をダウンロード (.txt)",
+                        data=script2.encode("utf-8"),
+                        file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name2}.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key=f"dl_hq_{datetime.now().strftime('%H%M%S%f')}",
+                    )
+                except anthropic.APIError as e:
+                    st.error(f"APIエラー: {e}")
 
 
 # ── 再編集パネル ──────────────────────────────────────────────────────────────
