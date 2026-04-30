@@ -428,6 +428,49 @@ def build_user_prompt(info):
     return "\n".join(lines)
 
 
+def try_parse_json(text):
+    """テキストからJSONを抽出し、一般的な破損パターンを自動修復してパースする。"""
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if not match:
+        raise ValueError("JSONが見つかりませんでした")
+    raw = match.group()
+
+    # ① そのままパース
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # ② よくある修正: trailing comma / 隣接オブジェクト間の欠落カンマ
+    cleaned = re.sub(r',(\s*[}\]])', r'\1', raw)          # trailing comma
+    cleaned = re.sub(r'}\s*\n(\s*)\{', r'},\n\1{', cleaned)  # } { → },{
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # ③ 末尾トランケーション修復: 最後の完全スライドで切り詰めて閉じ括弧を補完
+    for sep in ('}\n    }', '},\n    {', '},\n  {', '},\n{', '},'):
+        pos = cleaned.rfind(sep)
+        if pos > 0:
+            truncated = cleaned[:pos + 1]
+            open_b = truncated.count('[') - truncated.count(']')
+            open_c = truncated.count('{') - truncated.count('}')
+            repaired = truncated
+            repaired += ']' * max(0, open_b)
+            repaired += '}' * max(0, open_c)
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                continue
+
+    raise ValueError(
+        "スライドJSONの解析に失敗しました。\n"
+        "台本が非常に長い場合、スライド数が多すぎてJSONが壊れることがあります。\n"
+        "話数構成を減らすか台本を短くしてお試しください。"
+    )
+
+
 def search_trends(tavily_api_key, category, product_name):
     """カテゴリと商品名に関連する最新トレンドをWeb検索して返す。"""
     try:
@@ -505,7 +548,7 @@ def generate_slide_data(client, script):
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=16000,
+        max_tokens=32000,
         thinking={"type": "adaptive"},
         messages=[{"role": "user", "content": prompt}]
     )
@@ -513,10 +556,7 @@ def generate_slide_data(client, script):
     text = next((b.text for b in response.content if b.type == "text"), "")
     if not text:
         raise ValueError("スライドデータの生成に失敗しました")
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if not match:
-        raise ValueError("スライドデータのJSON抽出に失敗しました")
-    return json.loads(match.group())
+    return try_parse_json(text)
 
 
 def build_pptx(slide_data, design, pptx_size=(13.33, 7.5)):
@@ -1658,14 +1698,11 @@ if "current_script" in st.session_state:
                     with st.spinner("スライドを修正中..."):
                         response = client.messages.create(
                             model=MODEL,
-                            max_tokens=8192,
+                            max_tokens=32000,
                             messages=[{"role": "user", "content": revise_prompt}]
                         )
                         text = response.content[0].text
-                        match = re.search(r'\{.*\}', text, re.DOTALL)
-                        if not match:
-                            raise ValueError("修正データの生成に失敗しました")
-                        slide_data = json.loads(match.group())
+                        slide_data = try_parse_json(text)
                         st.session_state.slide_data = slide_data
 
                     slide_count = len(slide_data.get("slides", []))
