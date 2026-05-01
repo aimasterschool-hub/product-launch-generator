@@ -2152,6 +2152,14 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                 st.error(f"APIエラー: {_e}")
                 st.session_state.block_gen_active = False
 
+    hq_trend = st.checkbox(
+        "最新トレンドをWeb検索して構成案に反映する",
+        value=False,
+        key="hq_use_trend",
+        disabled=not tavily_api_key,
+        help="TavilyのAPIキーが設定されている場合に利用できます",
+    )
+
     col_hq1, col_hq2 = st.columns(2)
     with col_hq1:
         gen_outline_btn = st.button("① 構成案を生成する", use_container_width=True, key="btn_gen_outline")
@@ -2168,6 +2176,12 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
         else:
             outline_info = build_info_from_session()
             outline_prompt = build_outline_prompt(outline_info)
+            if hq_trend and tavily_api_key:
+                with st.spinner("最新トレンドを検索中..."):
+                    trends = search_trends(tavily_api_key, outline_info.get("category", ""), outline_info.get("name", ""))
+                if trends:
+                    outline_prompt += f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n上記のトレンド情報も構成案に自然に盛り込んでください。"
+                    st.info("最新トレンドを取得しました。構成案に反映します。")
             episode_num = int(outline_info.get("episode_structure", "1話完結")[0]) if outline_info.get("episode_structure", "1")[0].isdigit() else 1
             outline_tokens = min(3000 * episode_num, 12000)
             st.markdown("**構成案を生成中...**")
