@@ -2183,7 +2183,7 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     outline_prompt += f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n上記のトレンド情報も構成案に自然に盛り込んでください。"
                     st.info("最新トレンドを取得しました。構成案に反映します。")
             episode_num = int(outline_info.get("episode_structure", "1話完結")[0]) if outline_info.get("episode_structure", "1")[0].isdigit() else 1
-            outline_tokens = min(3000 * episode_num, 12000)
+            outline_tokens = min(5000 * episode_num, 24000)
             st.markdown("**構成案を生成中...**")
             placeholder_o = st.empty()
             outline_text = ""
