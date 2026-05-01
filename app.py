@@ -478,6 +478,8 @@ def build_user_prompt(info):
         "",
         "【出力形式の指示】",
         "- **書き言葉（〜である・〜のである）は絶対禁止**。必ず話し言葉（〜ですよね・〜なんです）で書くこと",
+        "- **抽象表現の完全禁止**：「素晴らしいです」「重要です」「人生が変わります」「大変でした」は一切使わない。視聴者が脳内で映像化できる具体描写で語ること",
+        "- **展開の鉄則**：各トピックは【主張】→【理由】→【具体的なエピソード・例え話（「例えば〜」）】→【視聴者へのベネフィット】の順で深く展開すること",
         "- 台本は必ず以下の**3カラム Markdownテーブル形式**で出力すること：",
         "  | 映像/テロップ指示 | 演者のセリフ | 演技/効果音の指示 |",
         "  |---|---|---|",
@@ -579,9 +581,14 @@ def build_outline_prompt(info):
 
 各セクションについて記載すること：
 1. セクション名・時間目安・**時間配分（%）**
-2. このセクションで伝えるポイント（箇条書き3〜5個）
+2. このセクションで伝えるポイント（ロジックの展開：箇条書き3〜5個）
 3. 使うべき具体的な数字・実績・エピソード
-4. 感情的な目標（視聴者にどう感じさせるか）
+4. 【深掘り素材】このブロックを語るための以下のアイデアを必ず書き出すこと：
+   - 使える「具体的なエピソード」（before/after・失敗談・顧客事例など）
+   - 使える「例え話・比喩」（〜に例えると／まるで〜のように）
+   - 裏付けとなる「データ・事実・統計」
+   ※ここで素材が薄ければSTEP2の台本も薄くなる。深掘りして捻出すること
+5. 感情的な目標（視聴者にどう感じさせるか）
 
 ---
 
@@ -608,6 +615,7 @@ def build_outline_prompt(info):
 def build_script_from_outline_prompt(outline, info):
     """承認済み構成案をもとに台本を生成するプロンプト。"""
     video_duration = info.get("video_duration", "7分（約2,100文字）")
+    min_chars = min_chars_per_block(video_duration)
     closing_strength = info.get("closing_strength", "標準")
     interviewer = info.get("interviewer_name", "").strip()
     dialogue_style = f"インタビュアー「{interviewer}」との対話形式" if interviewer else "一人語り（モノローグ）形式"
@@ -641,6 +649,9 @@ def build_script_from_outline_prompt(outline, info):
 - 話し方スタイル：{dialogue_style}
 - クロージングの強度：{closing_strength}
 - **書き言葉（〜である・〜のである）は絶対禁止**。必ず話し言葉で書くこと
+- **抽象表現の完全禁止**：「素晴らしいです」「重要です」「人生が変わります」「大変でした」は一切使わない。視聴者が脳内で映像化できるレベルの具体描写で語ること
+- **展開の鉄則**：各トピックは【主張】→【理由】→【具体的なエピソード・例え話（「例えば〜」）】→【視聴者へのベネフィット】の順で、しつこいくらいに深く、熱量を持って展開すること
+- **最低文字数**：1セクションにつき最低{min_chars}文字以上で重厚に展開すること（薄い内容は絶対禁止）
 
 ## 出力フォーマット（3カラム Markdownテーブル形式）
 
@@ -655,6 +666,85 @@ def build_script_from_outline_prompt(outline, info):
 - **演技/効果音の指示**: `[1秒の間]` `[カメラ目線で強調]` `[SE：ドラム音]` `[場面転換]` `[感情を込めて]` など
 
 各セクションの前に `## セクション名（〜分〜秒）` の見出しを必ず入れること。
+"""
+
+
+def min_chars_per_block(video_duration):
+    """動画の尺から1ブロックあたりの最低文字数を返す。"""
+    for minutes, chars in [(120, 2500), (90, 2000), (60, 1500), (45, 1200),
+                            (30, 900), (20, 700), (15, 600)]:
+        if f"{minutes}分" in video_duration:
+            return chars
+    return 400
+
+
+def parse_outline_blocks(outline_text):
+    """構成案を ## [N] で始まるブロック単位に分割する。"""
+    blocks = []
+    current_title = ""
+    current_lines = []
+    episode_header = ""
+    for line in outline_text.split('\n'):
+        s = line.strip()
+        if re.match(r'^# ', s) and '第' in s:
+            episode_header = s
+        elif re.match(r'^## \[', s):
+            if current_title and current_lines:
+                blocks.append({
+                    'title': current_title,
+                    'episode_header': episode_header,
+                    'content': '\n'.join(current_lines),
+                })
+            current_title = s
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+    if current_title and current_lines:
+        blocks.append({
+            'title': current_title,
+            'episode_header': episode_header,
+            'content': '\n'.join(current_lines),
+        })
+    return blocks
+
+
+def build_block_script_prompt(outline, block, block_num, total_blocks, previous_script, info):
+    """1ブロック分の台本を生成するプロンプト。"""
+    video_duration = info.get("video_duration", "7分（約2,100文字）")
+    min_chars = min_chars_per_block(video_duration)
+    interviewer = info.get("interviewer_name", "").strip()
+    dialogue_style = f"インタビュアー「{interviewer}」との対話形式" if interviewer else "一人語り（モノローグ）形式"
+    episode_header = block.get('episode_header', '')
+    block_label = f"{episode_header} / {block['title']}" if episode_header else block['title']
+    prev_context = ""
+    if previous_script:
+        tail = previous_script[-600:]
+        prev_context = f"\n## 直前ブロックの末尾（流れを繋げるために参照）\n{tail}\n\n---\n"
+
+    return f"""以下の【全体構成案】の中から、**今回のブロックのみ**の台本を生成してください。他のブロックは書かないこと。
+
+## 全体構成案（参照用）
+{outline}
+
+---
+{prev_context}
+## 今回書くブロック（{block_num} / {total_blocks}）
+{block_label}
+
+{block['content']}
+
+---
+
+## 生成ルール（厳守）
+- **このブロックの台本のみ**を出力する（他のブロックは書かない）
+- **最低{min_chars}文字以上**で重厚に展開すること（薄い内容は絶対禁止）
+- **展開の鉄則**：各トピックは【主張】→【理由】→【具体的なエピソード・例え話（「例えば〜」）】→【視聴者へのベネフィット】の順で展開する
+- **抽象表現の完全禁止**：「素晴らしいです」「重要です」「人生が変わります」「大変でした」は一切使わない。視聴者が脳内で映像化できる具体描写で語ること
+- 話し方スタイル：{dialogue_style}
+- **3カラム Markdownテーブル形式**で出力する：
+  | 映像/テロップ指示 | 演者のセリフ | 演技/効果音の指示 |
+  |---|---|---|
+- 書き言葉（〜である）絶対禁止、話し言葉のみ
 """
 
 
@@ -1871,7 +1961,7 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
             outline_info = build_info_from_session()
             outline_prompt = build_outline_prompt(outline_info)
             episode_num = int(outline_info.get("episode_structure", "1話完結")[0]) if outline_info.get("episode_structure", "1")[0].isdigit() else 1
-            outline_tokens = min(2000 * episode_num, 8000)
+            outline_tokens = min(3000 * episode_num, 12000)
             st.markdown("**構成案を生成中...**")
             placeholder_o = st.empty()
             outline_text = ""
@@ -1913,26 +2003,64 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                 st.error("APIキーを設定してください（サイドバー）")
             else:
                 outline_info2 = st.session_state.get("outline_info", build_info_from_session())
-                script_prompt2 = build_script_from_outline_prompt(outline_edit, outline_info2)
                 display_name2 = (outline_info2.get("name", "台本") or "台本") + "_高精度"
                 duration_key2 = outline_info2.get("video_duration", "7分（約2,100文字）").split("（")[0]
                 episode_num2 = int(outline_info2.get("episode_structure", "1話完結")[0]) if outline_info2.get("episode_structure", "1")[0].isdigit() else 1
-                base_tokens2 = DURATION_MAX_TOKENS.get(duration_key2, 4096)
-                max_tokens2 = min(base_tokens2 * episode_num2, 32000)
-                st.markdown("**台本を生成中...**")
-                placeholder2 = st.empty()
-                script2 = ""
+
+                # 15分以上かつブロックが2つ以上あればブロック分割生成
+                use_block_mode = duration_key2 in ["15分", "20分", "30分", "45分", "60分", "90分", "120分"]
+                blocks = parse_outline_blocks(outline_edit) if use_block_mode else []
+                use_block_mode = use_block_mode and len(blocks) >= 2
+
                 try:
                     client2 = anthropic.Anthropic(api_key=api_key)
-                    with client2.messages.stream(
-                        model=MODEL,
-                        max_tokens=max_tokens2,
-                        system=st.session_state.system_blocks,
-                        messages=[{"role": "user", "content": script_prompt2}],
-                    ) as stream:
-                        for text in stream.text_stream:
-                            script2 += text
-                            placeholder2.markdown(script2)
+
+                    if use_block_mode:
+                        total_b = len(blocks)
+                        st.info(f"長尺動画のため **{total_b} ブロックに分割** して順番に深く書き込みます")
+                        progress2 = st.progress(0)
+                        status2 = st.empty()
+                        all_parts = []
+                        for bi, block in enumerate(blocks):
+                            status2.text(f"生成中：{block['title']}（{bi+1}/{total_b}）")
+                            previous = '\n\n'.join(all_parts)
+                            blk_prompt = build_block_script_prompt(
+                                outline_edit, block, bi+1, total_b, previous, outline_info2
+                            )
+                            blk_text = ""
+                            blk_ph = st.empty()
+                            with client2.messages.stream(
+                                model=MODEL,
+                                max_tokens=6000,
+                                system=st.session_state.system_blocks,
+                                messages=[{"role": "user", "content": blk_prompt}],
+                            ) as stream:
+                                for text in stream.text_stream:
+                                    blk_text += text
+                                    blk_ph.markdown(blk_text)
+                            all_parts.append(f"## {block['title']}\n\n{blk_text}")
+                            progress2.progress((bi + 1) / total_b)
+                        status2.text("✅ 全ブロック生成完了！")
+                        script2 = '\n\n---\n\n'.join(all_parts)
+
+                    else:
+                        # 短尺：一括生成
+                        script_prompt2 = build_script_from_outline_prompt(outline_edit, outline_info2)
+                        base_tokens2 = DURATION_MAX_TOKENS.get(duration_key2, 4096)
+                        max_tokens2 = min(base_tokens2 * episode_num2, 32000)
+                        st.markdown("**台本を生成中...**")
+                        placeholder2 = st.empty()
+                        script2 = ""
+                        with client2.messages.stream(
+                            model=MODEL,
+                            max_tokens=max_tokens2,
+                            system=st.session_state.system_blocks,
+                            messages=[{"role": "user", "content": script_prompt2}],
+                        ) as stream:
+                            for text in stream.text_stream:
+                                script2 += text
+                                placeholder2.markdown(script2)
+
                     st.session_state.current_script = script2
                     st.session_state.display_name = display_name2
                     st.session_state.last_info = outline_info2
