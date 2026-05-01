@@ -2030,19 +2030,19 @@ def render_download_buttons(content, dl_name, ts, key_suffix):
     dc1, dc2, dc3 = st.columns(3)
     with dc1:
         st.download_button(
-            "完全版 (.md)",
+            "完全版 (.txt)",
             data=content.encode("utf-8"),
-            file_name=f"{ts}_{dl_name}.md",
-            mime="text/markdown",
+            file_name=f"{ts}_{dl_name}.txt",
+            mime="text/plain",
             use_container_width=True,
             key=f"dl_md{key_suffix}",
-            help="映像指示・セリフ・演技指示の3列テーブルをそのままMarkdown形式で保存",
+            help="映像指示・セリフ・演技指示をすべて含む完全版テキスト",
         )
     with dc2:
         st.download_button(
             "台本のみ (.txt)",
             data=extract_script_only(content).encode("utf-8"),
-            file_name=f"{ts}_{dl_name}_script.txt",
+            file_name=f"{ts}_{dl_name}_セリフのみ.txt",
             mime="text/plain",
             use_container_width=True,
             key=f"dl_txt{key_suffix}",
