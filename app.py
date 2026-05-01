@@ -1786,8 +1786,7 @@ if submitted:
         st.session_state.current_messages = messages
         st.session_state.display_name = display_name
         st.session_state.last_info = info
-
-        show_download(script, display_name, stats)
+        st.session_state.last_stats = stats
 
     except anthropic.APIError as e:
         st.error(f"APIエラー: {e}")
@@ -1881,16 +1880,8 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     st.session_state.current_script = script2
                     st.session_state.display_name = display_name2
                     st.session_state.last_info = outline_info2
-                    output_path2 = save_script(script2, display_name2)
-                    st.success(f"保存済み: {output_path2}")
-                    st.download_button(
-                        "台本をダウンロード (.txt)",
-                        data=script2.encode("utf-8"),
-                        file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{display_name2}.txt",
-                        mime="text/plain",
-                        use_container_width=True,
-                        key=f"dl_hq_{datetime.now().strftime('%H%M%S%f')}",
-                    )
+                    st.session_state.last_stats = {}
+                    save_script(script2, display_name2)
                 except anthropic.APIError as e:
                     st.error(f"APIエラー: {e}")
 
@@ -1898,6 +1889,28 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
 # ── 再編集パネル ──────────────────────────────────────────────────────────────
 
 if "current_script" in st.session_state:
+
+    # ── 台本ダウンロード（常時表示）──
+    st.divider()
+    st.subheader("生成済み台本")
+    stats_s = st.session_state.get("last_stats", {})
+    if stats_s:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("入力トークン", f"{stats_s.get('input_tokens', 0):,}")
+        c2.metric("出力トークン", f"{stats_s.get('output_tokens', 0):,}")
+        if stats_s.get("cache_creation_tokens"):
+            c3.metric("キャッシュ書込み", f"{stats_s['cache_creation_tokens']:,}")
+        if stats_s.get("cache_read_tokens"):
+            c4.metric("キャッシュ読込み", f"{stats_s['cache_read_tokens']:,}")
+    _dl_name = st.session_state.get("display_name", "台本")
+    st.download_button(
+        "台本をダウンロード (.txt)",
+        data=st.session_state.current_script.encode("utf-8"),
+        file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{_dl_name}.txt",
+        mime="text/plain",
+        use_container_width=True,
+        key="dl_persistent",
+    )
 
     # ── プリセット保存（フォーム外で常時動作）──
     st.divider()
@@ -1946,8 +1959,7 @@ if "current_script" in st.session_state:
 
                 st.session_state.current_script = script
                 st.session_state.current_messages = messages
-
-                show_download(script, display_name, stats)
+                st.session_state.last_stats = stats
 
             except anthropic.APIError as e:
                 st.error(f"APIエラー: {e}")
