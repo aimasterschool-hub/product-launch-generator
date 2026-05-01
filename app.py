@@ -1546,30 +1546,47 @@ with st.sidebar:
 
     saved_presets = st.session_state.get("saved_presets", {})
 
-    # 呼び出し
+    # ── 削除確認ダイアログ ──
+    _pending_del = st.session_state.get("confirm_delete_name")
+    if _pending_del and _pending_del in saved_presets:
+        st.warning(f"「{_pending_del}」を本当に削除しますか？")
+        _cy, _cn = st.columns(2)
+        with _cy:
+            if st.button("削除する", type="primary", use_container_width=True, key="confirm_del_yes"):
+                if "recently_deleted" not in st.session_state:
+                    st.session_state["recently_deleted"] = {}
+                rd = st.session_state["recently_deleted"]
+                rd[_pending_del] = saved_presets[_pending_del]
+                if len(rd) > 5:
+                    del rd[next(iter(rd))]
+                del st.session_state["saved_presets"][_pending_del]
+                save_presets_to_file(st.session_state["saved_presets"])
+                st.session_state.pop("confirm_delete_name", None)
+                st.toast(f"「{_pending_del}」を削除しました（削除済みから復元できます）")
+                st.rerun()
+        with _cn:
+            if st.button("キャンセル", use_container_width=True, key="confirm_del_no"):
+                st.session_state.pop("confirm_delete_name", None)
+                st.rerun()
+        st.divider()
+
+    # ── 呼び出し ──
     if saved_presets:
         sel = st.selectbox("保存済みプリセット", ["── 選択 ──"] + list(saved_presets.keys()), key="preset_select")
-        col_load, col_del = st.columns(2)
-        with col_load:
-            if st.button("呼び出す", use_container_width=True):
-                if sel != "── 選択 ──":
-                    load_preset_to_session(saved_presets[sel])
-                    st.success(f"「{sel}」を読み込みました")
-                    st.rerun()
-        with col_del:
-            if st.button("削除", use_container_width=True):
-                if sel != "── 選択 ──":
-                    # 削除前に復元バッファへ退避（最大5件）
-                    if "recently_deleted" not in st.session_state:
-                        st.session_state["recently_deleted"] = {}
-                    rd = st.session_state["recently_deleted"]
-                    rd[sel] = st.session_state["saved_presets"][sel]
-                    if len(rd) > 5:
-                        oldest = next(iter(rd))
-                        del rd[oldest]
-                    del st.session_state["saved_presets"][sel]
-                    save_presets_to_file(st.session_state["saved_presets"])
-                    st.toast(f"「{sel}」を削除しました（下の「削除済み」から復元できます）")
+        if st.button("呼び出す", use_container_width=True):
+            if sel != "── 選択 ──":
+                load_preset_to_session(saved_presets[sel])
+                st.success(f"「{sel}」を読み込みました")
+                st.rerun()
+
+        # ── プリセット一覧・削除 ──
+        with st.expander("プリセット一覧・削除"):
+            st.caption("削除ボタンを押すと確認ダイアログが表示されます")
+            for _pname in list(saved_presets.keys()):
+                _col_n, _col_d = st.columns([3, 1])
+                _col_n.text(_pname)
+                if _col_d.button("削除", key=f"del_btn_{_pname}", use_container_width=True):
+                    st.session_state["confirm_delete_name"] = _pname
                     st.rerun()
     else:
         st.caption("保存済みプリセットはありません")
@@ -1577,7 +1594,7 @@ with st.sidebar:
     # ── 削除済みプリセット（復元） ──
     recently_deleted = st.session_state.get("recently_deleted", {})
     if recently_deleted:
-        st.caption("🗑️ 削除済み（復元可能）")
+        st.caption("削除済み（復元可能）")
         for del_name in list(recently_deleted.keys()):
             col_r, col_rb = st.columns([3, 1])
             col_r.text(del_name)
