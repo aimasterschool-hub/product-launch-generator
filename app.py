@@ -2326,9 +2326,20 @@ if "current_script" in st.session_state:
             if preset_name and "last_info" in st.session_state:
                 if "saved_presets" not in st.session_state:
                     st.session_state["saved_presets"] = {}
-                st.session_state["saved_presets"][preset_name] = st.session_state.last_info
+                # 同名が既にある場合は（2）（3）と連番を付ける
+                existing = st.session_state["saved_presets"]
+                save_name = preset_name
+                if save_name in existing:
+                    n = 2
+                    while f"{preset_name}（{n}）" in existing:
+                        n += 1
+                    save_name = f"{preset_name}（{n}）"
+                st.session_state["saved_presets"][save_name] = st.session_state.last_info
                 save_presets_to_file(st.session_state["saved_presets"])
-                st.success(f"「{preset_name}」を保存しました。左のサイドバーから呼び出せます。")
+                if save_name != preset_name:
+                    st.success(f"「{preset_name}」が既に存在するため「{save_name}」として保存しました。")
+                else:
+                    st.success(f"「{save_name}」を保存しました。左のサイドバーから呼び出せます。")
             elif not preset_name:
                 st.warning("プリセット名を入力してください")
 
