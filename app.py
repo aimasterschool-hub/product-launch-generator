@@ -34,8 +34,8 @@ SAMPLES_DIR = Path("samples")
 
 PRESET_SIMPLE_KEYS = [
     "structure_type", "include_knowhow", "knowhow_theme", "knowhow_notes",
-    "name", "category", "seller_name", "seller_profile",
-    "interviewer_name", "interviewer_profile", "seller_authority",
+    "name", "category", "seller_name", "seller_first_person", "seller_profile",
+    "interviewer_name", "interviewer_first_person", "interviewer_profile", "seller_authority",
     "catchcopy", "target_audience", "result1", "result2",
     "monthly_return", "ease_of_start",
     "voice1", "voice2", "voice3",
@@ -110,11 +110,13 @@ def clear_form_state():
     # セレクトボックス（フォームの default と一致させる）
     st.session_state["f_category"]          = "FX・為替投資"
     st.session_state["f_third_party_type"]  = "なし"
-    st.session_state["f_sales_start_day"]   = "翌日（1日後）"
-    st.session_state["f_installment"]       = "なし"
-    st.session_state["f_episode_structure"] = "1話完結"
-    st.session_state["f_closing_strength"]  = "真摯・控えめ（押し付けない）"
-    st.session_state["f_video_duration"]    = "7分（約2,100文字）"
+    st.session_state["f_sales_start_day"]        = "翌日（1日後）"
+    st.session_state["f_installment"]            = "なし"
+    st.session_state["f_episode_structure"]      = "1話完結"
+    st.session_state["f_closing_strength"]       = "真摯・控えめ（押し付けない）"
+    st.session_state["f_video_duration"]         = "7分（約2,100文字）"
+    st.session_state["f_seller_first_person"]    = "私"
+    st.session_state["f_interviewer_first_person"] = "私"
 
 
 OUTPUT_DIR   = Path("output")
@@ -286,27 +288,34 @@ def build_system_prompt(samples):
         "text": (
             "あなたは世界トップクラスのダイレクトレスポンス・コピーライター兼、敏腕映像ディレクターです。\n"
             "プロダクトローンチ用の動画台本を生成する専門家として、以下の設計図・サンプル・商品情報を参照してください。\n\n"
-            "## 参照の優先度\n"
-            "1. **成功台本の設計図**：心理構造・話数設計・各セクションの役割を理解する（構成の骨格）\n"
-            "2. **サンプル台本**：実際の語り口・文体・リズム・言い回しを学ぶ（表現のスタイル）\n"
-            "3. **商品情報**：具体的な数字・ストーリー・特徴を設計図に当てはめる\n\n"
+            "## 参照の優先度（必ず守ること）\n"
+            "1. **サンプル台本の骨子・流れ**【最優先】：サンプルのセクション構成・話の展開順序・ナレーションの流れを「骨格」として最優先で使う。\n"
+            "   サンプルがどこで何を語り、どう感情を動かし、どうCTAに向かっているか——その骨格を忠実に再現すること。\n"
+            "2. **商品情報**：骨格の各セクションに、今回の商品固有の数字・ストーリー・特徴を肉付けする\n"
+            "3. **成功台本の設計図**【補助のみ】：各セクションを「深掘り・強化」するための参考として使う。構成の骨格には使わない\n\n"
             "## 絶対に守るライティングルール\n"
             "- **書き言葉（〜である・〜のである・〜といえる・〜とされている）は絶対禁止**\n"
             "- 必ず「話し言葉」で書く：〜ですよね！ / 〜なんです / 〜じゃないですか / 〜してみてください\n"
             "- 1文はシンプルかつ短く。読点で区切り、一文に複数の意味を詰め込まない\n"
             "- 語尾は「〜ですよ。」を避け、「〜です。」「〜でした。」「〜ます。」「〜ました。」を基本にする\n"
-            "- **人間味・自然さを最優先する**：ルールに縛られすぎず、まるで親しい先輩が視聴者に話しかけるように書くこと。\n"
-            "  会話には自然な「間」「脱線」「感情の揺れ」がある。PREPの展開順序はあくまで深掘りの意識として使い、\n"
-            "  会話の流れを壊してまで型に当てはめないこと。\n"
-            "- **温度感と共感を文章に乗せる**：視聴者の気持ちに寄り添う言葉（「わかります」「そうですよね」「実は私も同じでした」）を\n"
-            "  自然なタイミングで挟み、一方的な説明にならないようにすること。\n"
+            "- **人間味・自然さを絶対最優先する**：「台本を読んでいる感」が出た時点で失敗。\n"
+            "  まるでその場で言葉を選びながら話しているように書くこと。言い直し・間・感情の揺れを入れる。\n"
+            "  （使える表現例：「えっとですね…」「ちょっと待って、これ大事なんで」「あ、そうそう言い忘れてたんですけど」\n"
+            "  「正直に言うと」「これ、実は私も最初は信じられなくて」「うまく言えないんですけど」）\n"
+            "- **販売者のキャラクターを一貫して描く**：台本全体を通じて、その人固有の話し方・口癖・ユーモア・\n"
+            "  弱さ・人間らしさを描くこと。誰が話しても同じになる「汎用コピー」にしないこと。\n"
+            "- **温度感と共感を文章に乗せる**：視聴者の気持ちに寄り添う言葉を自然なタイミングで挟む。\n"
+            "  （例：「わかります、私も最初はそう思ってました」「そうですよね、不安ですよね」「実は私も同じ悩みでした」）\n"
+            "  一方的な説明にならないよう、視聴者との対話感を出すこと。\n"
+            "- PREPの展開順序はあくまで深掘りの意識として使い、会話の流れを壊してまで型に当てはめないこと。\n"
             "- 動画冒頭の**開始15秒以内**に「この動画を最後まで見ないと損をする理由」を明示するフックを必ず入れること\n"
             "  （例：「この15秒だけ聞いてください。〇〇を知らないまま投資すると、9割の人が損します」）\n\n"
-            "## 分析のポイント\n"
-            "- 設計図の8要素（フック・問題提起・ストーリー・ロジック・証拠・ハードル排除・価格崩し・クロージング）が\n"
-            "  各話に適切に配置されているか確認する\n"
-            "- サンプルのトーン・語彙・文章のリズムを踏襲する\n"
-            "- 視聴者の心理変化（無関心→興味→信頼→欲求→行動）を各話の流れで設計する\n"
+            "## 生成の進め方\n"
+            "1. **サンプルの骨格を読み取る**：サンプルのセクション数・順序・各パートの役割・感情の流れを把握する\n"
+            "2. **骨格に商品情報を当てはめる**：サンプルの各セクションの「場所」に、今回の数字・エピソード・強みを入れ替える\n"
+            "3. **設計図で深掘りする**：設計図の8要素（フック・ストーリー・証拠・反論処理など）を使って各セクションを肉付けする\n"
+            "- サンプルのトーン・語彙・言い回し・文章のリズムを踏襲する\n"
+            "- 視聴者の心理変化（無関心→興味→信頼→欲求→行動）は、サンプルの流れに沿って自然に設計する\n"
         ),
     }
 
@@ -358,7 +367,9 @@ def build_user_prompt(info):
     knowhow_notes = info.get("knowhow_notes", "").strip()
 
     lines = [
-        "以下のプロダクト情報をもとに、サンプル台本のスタイルを踏襲した台本を生成してください。",
+        "以下のプロダクト情報をもとに、**サンプル台本の骨子・セクション構成・話の展開を骨格として最優先に**台本を生成してください。",
+        "サンプルの各セクションの順番・役割・感情の流れをそのまま骨格として使い、そこに以下の商品情報を肉付けして深掘りしてください。",
+        "成功台本の設計図は骨格ではなく、各セクションを深掘り・強化するための補助ツールとして使ってください。",
         "",
         "## 構成タイプ",
         f"**タイプ**: {structure_type}",
@@ -386,7 +397,9 @@ def build_user_prompt(info):
         f"**商品名**: {info.get('name', '')}",
         f"**ジャンル**: {info.get('category', '')}",
         f"**販売者名**: {info.get('seller_name', '')}",
+        f"**販売者の一人称**: {info.get('seller_first_person', '私')}（台本全体でこの一人称に統一すること）",
         f"**販売者のプロフィール**: {info.get('seller_profile', '')}",
+        f"**インタビュアーの一人称**: {info.get('interviewer_first_person', '私')}（インタビュアーの発言はこの一人称に統一すること）",
         f"**インタビュアープロフィール**: {info.get('interviewer_profile', '')}",
         f"**販売者の権威・実績**: {info.get('seller_authority', '')}",
         f"**原体験・どん底ストーリー**: {info.get('seller_story', '')}",
@@ -480,6 +493,16 @@ def build_user_prompt(info):
     if info.get("notes"):
         lines += ["", f"**追加メモ**: {info['notes']}"]
 
+    seller_name_val = info.get("seller_name", "").strip()
+    seller_pronoun = info.get("seller_first_person", "私")
+    if seller_name_val:
+        lines += [
+            "",
+            "## 自己紹介・一人称の厳守ルール",
+            f"販売者の自己紹介シーンでは必ず「{seller_pronoun}は{seller_name_val}と申します」または「{seller_name_val}です」と名前を名乗ること。",
+            f"台本全体で販売者の一人称は「{seller_pronoun}」に完全統一すること。他の一人称（私・僕・おれ・自分など）は一切使わないこと。",
+        ]
+
     lines += [
         "",
         "【出力形式の指示】",
@@ -510,10 +533,12 @@ def build_info_from_session():
         "knowhow_notes":     ss.get("f_knowhow_notes", ""),
         "name":              ss.get("f_name", ""),
         "category":          ss.get("f_category", ""),
-        "seller_name":       ss.get("f_seller_name", ""),
-        "seller_profile":    ss.get("f_seller_profile", ""),
-        "interviewer_name":  ss.get("f_interviewer_name", ""),
-        "interviewer_profile": ss.get("f_interviewer_profile", ""),
+        "seller_name":          ss.get("f_seller_name", ""),
+        "seller_first_person":  ss.get("f_seller_first_person", "私"),
+        "seller_profile":       ss.get("f_seller_profile", ""),
+        "interviewer_name":     ss.get("f_interviewer_name", ""),
+        "interviewer_first_person": ss.get("f_interviewer_first_person", "私"),
+        "interviewer_profile":  ss.get("f_interviewer_profile", ""),
         "seller_authority":  ss.get("f_seller_authority", ""),
         "seller_story":      ss.get("f_seller_story", ""),
         "catchcopy":         ss.get("f_catchcopy", ""),
@@ -583,6 +608,11 @@ def build_outline_prompt(info):
 
 台本の文章は**絶対に書かないでください**。
 以下の形式で「骨格（アウトライン）」だけを出力してください。
+
+### 構成案の作り方（この順序で考えること）
+1. **まずサンプル台本の骨格を踏襲する**：サンプルのセクション数・順序・各パートの役割・話の展開パターンをそのまま骨格として使うこと
+2. **各セクションに商品情報を当てはめる**：骨格の「場所」に今回の商品の数字・エピソード・強みを入れ替えて深掘り素材を考える
+3. **成功台本の設計図で肉付けする**：フック・ストーリー・反論処理などの要素で各セクションを強化する
 {episode_rules}
 
 各セクションについて記載すること：
@@ -673,6 +703,31 @@ def build_script_from_outline_prompt(outline, info):
 
 各セクションの前に `## セクション名（〜分〜秒）` の見出しを必ず入れること。
 """
+
+
+def split_script_by_episode(script):
+    """台本を # 第N話 ヘッダーで話ごとに分割する。分割できない場合は全体を1件で返す。"""
+    lines = script.split('\n')
+    episodes = []
+    current_title = None
+    current_lines = []
+    for line in lines:
+        if re.match(r'^#\s+第\d+話', line.strip()):
+            if current_lines and any(l.strip() for l in current_lines):
+                episodes.append({
+                    'title': current_title or '全話',
+                    'content': '\n'.join(current_lines).strip(),
+                })
+            current_title = line.strip().lstrip('#').strip()
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+    if current_lines and any(l.strip() for l in current_lines):
+        episodes.append({
+            'title': current_title or '全話',
+            'content': '\n'.join(current_lines).strip(),
+        })
+    return episodes if episodes else [{'title': '全話', 'content': script}]
 
 
 def min_chars_per_block(video_duration):
@@ -1589,6 +1644,7 @@ with st.form("product_form"):
             "教育・スキルアップ", "テック・SaaS", "食品・サプリ", "その他"
         ], key="f_category")
         seller_name = st.text_input("販売者名", placeholder="例：はたけ", key="f_seller_name")
+        seller_first_person = st.selectbox("販売者の一人称", ["私", "僕", "おれ"], key="f_seller_first_person")
         seller_profile = st.text_area(
             "販売者のプロフィール",
             placeholder="例：元会社員で副業からFXを始め、3年で脱サラ。現在はFX系YouTuberとして活動中。フォロワー10万人。",
@@ -1599,6 +1655,7 @@ with st.form("product_form"):
             placeholder="例：ふじき　　※空欄→モノローグ形式",
             key="f_interviewer_name",
         )
+        interviewer_first_person = st.selectbox("インタビュアーの一人称", ["私", "僕", "おれ"], key="f_interviewer_first_person")
         interviewer_profile = st.text_area(
             "インタビュアーのプロフィール（任意）",
             placeholder="例：元銀行員、現在は投資系メディアのライター。読者目線で質問するのが得意。",
@@ -1874,6 +1931,41 @@ def show_download(script, display_name, stats):
     )
 
 
+def render_download_buttons(content, dl_name, ts, key_suffix):
+    """3種類のダウンロードボタンを横並びで表示するヘルパー。"""
+    dc1, dc2, dc3 = st.columns(3)
+    with dc1:
+        st.download_button(
+            "完全版 (.md)",
+            data=content.encode("utf-8"),
+            file_name=f"{ts}_{dl_name}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key=f"dl_md{key_suffix}",
+            help="映像指示・セリフ・演技指示の3列テーブルをそのままMarkdown形式で保存",
+        )
+    with dc2:
+        st.download_button(
+            "台本のみ (.txt)",
+            data=extract_script_only(content).encode("utf-8"),
+            file_name=f"{ts}_{dl_name}_script.txt",
+            mime="text/plain",
+            use_container_width=True,
+            key=f"dl_txt{key_suffix}",
+            help="セリフ列だけを抽出したプレーンテキスト。読み合わせや練習用",
+        )
+    with dc3:
+        st.download_button(
+            "映像+台本 (.csv)　スライド用",
+            data=extract_slide_csv(content).encode("utf-8"),
+            file_name=f"{ts}_{dl_name}_slide.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key=f"dl_csv{key_suffix}",
+            help="セクション・映像テロップ指示・セリフの2列CSV。スライド壁打ちに最適",
+        )
+
+
 if submitted:
     info = {
         "structure_type": structure_type,
@@ -1881,8 +1973,8 @@ if submitted:
         "knowhow_theme": knowhow_theme,
         "knowhow_notes": knowhow_notes,
         "name": name, "category": category,
-        "seller_name": seller_name, "seller_profile": seller_profile,
-        "interviewer_name": interviewer_name, "interviewer_profile": interviewer_profile,
+        "seller_name": seller_name, "seller_first_person": seller_first_person, "seller_profile": seller_profile,
+        "interviewer_name": interviewer_name, "interviewer_first_person": interviewer_first_person, "interviewer_profile": interviewer_profile,
         "seller_authority": seller_authority,
         "catchcopy": catchcopy, "target_audience": target_audience,
         "result1": result1, "result2": result2,
@@ -1947,8 +2039,81 @@ if submitted:
 # ── 高精度モード（2ステップ生成） ─────────────────────────────────────────────
 
 st.divider()
-with st.expander("高精度モード（2ステップ生成）", expanded=("outline_draft" in st.session_state)):
+with st.expander("高精度モード（2ステップ生成）", expanded=("outline_draft" in st.session_state or st.session_state.get("block_gen_active", False))):
     st.caption("① 構成案を生成 → 確認・編集 → ② 台本を生成。意図に沿った高品質な台本ができます。")
+
+    # ── ブロック分割生成中の処理 ──
+    if st.session_state.get("block_gen_active", False):
+        _bq = st.session_state.get("block_gen_queue", [])
+        _bc = st.session_state.get("block_gen_completed", [])
+        _bt = st.session_state.get("block_gen_total", 1)
+        _bdn = st.session_state.get("block_gen_display_name", "台本")
+        _bi = _bt - len(_bq)  # 完了済みブロック数
+
+        _prog_col, _stop_col = st.columns([4, 1])
+        with _prog_col:
+            st.progress(_bi / _bt, text=f"{_bi}/{_bt} ブロック完了")
+        with _stop_col:
+            _stop_clicked = st.button("⏹ 中止", key="stop_block_gen")
+
+        if _stop_clicked:
+            st.session_state.block_gen_active = False
+            if _bc:
+                _partial = '\n\n---\n\n'.join(_bc)
+                st.session_state.current_script = _partial
+                st.session_state.display_name = _bdn
+                st.session_state.last_info = st.session_state.get("block_gen_info", {})
+                st.session_state.last_stats = {}
+                save_script(_partial, _bdn)
+            st.warning("⏹ 生成を中止しました。生成済みのブロックを保存しました。")
+            st.rerun()
+
+        if _bq:
+            _block = _bq[0]
+            st.markdown(f"**生成中：{_block['title']}（{_bi+1}/{_bt}）**")
+            _prev = '\n\n'.join(_bc)
+            _blk_prompt = build_block_script_prompt(
+                st.session_state.get("block_gen_outline", ""),
+                _block, _bi + 1, _bt, _prev,
+                st.session_state.get("block_gen_info", {})
+            )
+            _blk_text = ""
+            _blk_ph = st.empty()
+            try:
+                _client_blk = anthropic.Anthropic(api_key=api_key)
+                with _client_blk.messages.stream(
+                    model=MODEL,
+                    max_tokens=6000,
+                    system=st.session_state.system_blocks,
+                    messages=[{"role": "user", "content": _blk_prompt}],
+                ) as _stream:
+                    for _t in _stream.text_stream:
+                        _blk_text += _t
+                        _blk_ph.markdown(_blk_text)
+                # 話（エピソード）が変わったときにヘッダーを付与
+                _cur_ep = _block.get('episode_header', '')
+                _prev_ep = st.session_state.get("block_gen_current_episode", "")
+                if _cur_ep and _cur_ep != _prev_ep:
+                    _ep_prefix = f"# {_cur_ep}\n\n"
+                    st.session_state.block_gen_current_episode = _cur_ep
+                else:
+                    _ep_prefix = ""
+                # _block['title'] はすでに "## [N] ..." 形式なので ## を付け足さない
+                _new_bc = _bc + [f"{_ep_prefix}{_block['title']}\n\n{_blk_text}"]
+                st.session_state.block_gen_completed = _new_bc
+                st.session_state.block_gen_queue = _bq[1:]
+                if len(_bq) == 1:  # 最後のブロック
+                    st.session_state.block_gen_active = False
+                    _final_script = '\n\n---\n\n'.join(_new_bc)
+                    st.session_state.current_script = _final_script
+                    st.session_state.display_name = _bdn
+                    st.session_state.last_info = st.session_state.get("block_gen_info", {})
+                    st.session_state.last_stats = {}
+                    save_script(_final_script, _bdn)
+                st.rerun()
+            except anthropic.APIError as _e:
+                st.error(f"APIエラー: {_e}")
+                st.session_state.block_gen_active = False
 
     col_hq1, col_hq2 = st.columns(2)
     with col_hq1:
@@ -2018,38 +2183,20 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                 blocks = parse_outline_blocks(outline_edit) if use_block_mode else []
                 use_block_mode = use_block_mode and len(blocks) >= 2
 
-                try:
-                    client2 = anthropic.Anthropic(api_key=api_key)
-
-                    if use_block_mode:
-                        total_b = len(blocks)
-                        st.info(f"長尺動画のため **{total_b} ブロックに分割** して順番に深く書き込みます")
-                        progress2 = st.progress(0)
-                        status2 = st.empty()
-                        all_parts = []
-                        for bi, block in enumerate(blocks):
-                            status2.text(f"生成中：{block['title']}（{bi+1}/{total_b}）")
-                            previous = '\n\n'.join(all_parts)
-                            blk_prompt = build_block_script_prompt(
-                                outline_edit, block, bi+1, total_b, previous, outline_info2
-                            )
-                            blk_text = ""
-                            blk_ph = st.empty()
-                            with client2.messages.stream(
-                                model=MODEL,
-                                max_tokens=6000,
-                                system=st.session_state.system_blocks,
-                                messages=[{"role": "user", "content": blk_prompt}],
-                            ) as stream:
-                                for text in stream.text_stream:
-                                    blk_text += text
-                                    blk_ph.markdown(blk_text)
-                            all_parts.append(f"## {block['title']}\n\n{blk_text}")
-                            progress2.progress((bi + 1) / total_b)
-                        status2.text("✅ 全ブロック生成完了！")
-                        script2 = '\n\n---\n\n'.join(all_parts)
-
-                    else:
+                if use_block_mode:
+                    # ブロック分割生成：キューを初期化してrerunで1ブロックずつ処理
+                    st.session_state.block_gen_active = True
+                    st.session_state.block_gen_queue = blocks
+                    st.session_state.block_gen_completed = []
+                    st.session_state.block_gen_total = len(blocks)
+                    st.session_state.block_gen_outline = outline_edit
+                    st.session_state.block_gen_info = outline_info2
+                    st.session_state.block_gen_display_name = display_name2
+                    st.session_state.block_gen_current_episode = ""
+                    st.rerun()
+                else:
+                    try:
+                        client2 = anthropic.Anthropic(api_key=api_key)
                         # 短尺：一括生成
                         script_prompt2 = build_script_from_outline_prompt(outline_edit, outline_info2)
                         base_tokens2 = DURATION_MAX_TOKENS.get(duration_key2, 4096)
@@ -2066,14 +2213,13 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                             for text in stream.text_stream:
                                 script2 += text
                                 placeholder2.markdown(script2)
-
-                    st.session_state.current_script = script2
-                    st.session_state.display_name = display_name2
-                    st.session_state.last_info = outline_info2
-                    st.session_state.last_stats = {}
-                    save_script(script2, display_name2)
-                except anthropic.APIError as e:
-                    st.error(f"APIエラー: {e}")
+                        st.session_state.current_script = script2
+                        st.session_state.display_name = display_name2
+                        st.session_state.last_info = outline_info2
+                        st.session_state.last_stats = {}
+                        save_script(script2, display_name2)
+                    except anthropic.APIError as e:
+                        st.error(f"APIエラー: {e}")
 
 
 # ── 再編集パネル ──────────────────────────────────────────────────────────────
@@ -2095,37 +2241,27 @@ if "current_script" in st.session_state:
     _dl_name = st.session_state.get("display_name", "台本")
     _ts      = datetime.now().strftime('%Y%m%d_%H%M%S')
     _script  = st.session_state.current_script
-    dc1, dc2, dc3 = st.columns(3)
-    with dc1:
-        st.download_button(
-            "完全版 (.md)",
-            data=_script.encode("utf-8"),
-            file_name=f"{_ts}_{_dl_name}.md",
-            mime="text/markdown",
-            use_container_width=True,
-            key="dl_full_md",
-            help="映像指示・セリフ・演技指示の3列テーブルをそのままMarkdown形式で保存",
-        )
-    with dc2:
-        st.download_button(
-            "台本のみ (.txt)",
-            data=extract_script_only(_script).encode("utf-8"),
-            file_name=f"{_ts}_{_dl_name}_script.txt",
-            mime="text/plain",
-            use_container_width=True,
-            key="dl_script_only",
-            help="セリフ列だけを抽出したプレーンテキスト。読み合わせや練習用",
-        )
-    with dc3:
-        st.download_button(
-            "映像+台本 (.csv)　スライド用",
-            data=extract_slide_csv(_script).encode("utf-8"),
-            file_name=f"{_ts}_{_dl_name}_slide.csv",
-            mime="text/csv",
-            use_container_width=True,
-            key="dl_slide_csv",
-            help="セクション・映像テロップ指示・セリフの2列CSV。Claudeに読み込ませてスライド壁打ちに最適",
-        )
+
+    _episodes = split_script_by_episode(_script)
+
+    if len(_episodes) <= 1:
+        # 1話完結：タブなし
+        render_download_buttons(_script, _dl_name, _ts, "_all")
+    else:
+        # 複数話：タブで話ごとに切り替え
+        _tab_labels = ["全話"] + [f"第{i+1}話" for i in range(len(_episodes))]
+        _dl_tabs = st.tabs(_tab_labels)
+        with _dl_tabs[0]:
+            render_download_buttons(_script, _dl_name, _ts, "_all")
+        for _ei, (_tab, _ep) in enumerate(zip(_dl_tabs[1:], _episodes)):
+            with _tab:
+                st.caption(_ep['title'])
+                render_download_buttons(
+                    _ep['content'],
+                    f"{_dl_name}_第{_ei+1}話",
+                    _ts,
+                    f"_ep{_ei+1}",
+                )
 
     # ── プリセット保存（フォーム外で常時動作）──
     st.divider()
