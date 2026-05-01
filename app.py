@@ -1258,6 +1258,62 @@ def build_slides_zip(slide_data, design, fmt, output_formats, display_name):
     return buf.getvalue()
 
 
+def extract_script_only(script_text):
+    """3カラムテーブルからセリフ列だけを抽出してプレーンテキストに変換する。
+    テーブル形式でない台本はそのまま返す。"""
+    lines = script_text.split('\n')
+    if not any('|' in line for line in lines):
+        return script_text
+    result = []
+    current_section = ""
+    for line in lines:
+        s = line.strip()
+        if s.startswith('## ') or s.startswith('# '):
+            current_section = s.lstrip('#').strip()
+            result.append(f"\n【{current_section}】\n")
+        elif re.match(r'^\|[-|: ]+\|$', s):
+            continue  # 区切り行
+        elif s.startswith('|'):
+            cells = [c.strip() for c in s.split('|')[1:-1]]
+            if len(cells) >= 2:
+                script_cell = cells[1]
+                if '演者のセリフ' in script_cell or 'セリフ' in script_cell:
+                    continue  # ヘッダー行
+                if script_cell:
+                    result.append(script_cell)
+        elif s and not s.startswith('|'):
+            result.append(line)
+    return '\n'.join(result)
+
+
+def extract_slide_csv(script_text):
+    """3カラムテーブルからセクション・映像テロップ・セリフをCSV（UTF-8 BOM）に変換する。"""
+    import csv as _csv, io as _io
+    lines = script_text.split('\n')
+    rows = []
+    current_section = ""
+    for line in lines:
+        s = line.strip()
+        if s.startswith('## ') or s.startswith('# '):
+            current_section = s.lstrip('#').strip()
+        elif re.match(r'^\|[-|: ]+\|$', s):
+            continue
+        elif s.startswith('|'):
+            cells = [c.strip() for c in s.split('|')[1:-1]]
+            if len(cells) >= 2:
+                if '映像' in cells[0] or 'テロップ' in cells[0]:
+                    continue  # ヘッダー行
+                video  = cells[0] if len(cells) > 0 else ""
+                script = cells[1] if len(cells) > 1 else ""
+                if video or script:
+                    rows.append([current_section, video, script])
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(['セクション', '映像/テロップ指示', '演者のセリフ'])
+    w.writerows(rows)
+    return '﻿' + buf.getvalue()  # Excel対応 UTF-8 BOM
+
+
 def save_script(script, product_name):
     OUTPUT_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1903,14 +1959,39 @@ if "current_script" in st.session_state:
         if stats_s.get("cache_read_tokens"):
             c4.metric("キャッシュ読込み", f"{stats_s['cache_read_tokens']:,}")
     _dl_name = st.session_state.get("display_name", "台本")
-    st.download_button(
-        "台本をダウンロード (.txt)",
-        data=st.session_state.current_script.encode("utf-8"),
-        file_name=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{_dl_name}.txt",
-        mime="text/plain",
-        use_container_width=True,
-        key="dl_persistent",
-    )
+    _ts      = datetime.now().strftime('%Y%m%d_%H%M%S')
+    _script  = st.session_state.current_script
+    dc1, dc2, dc3 = st.columns(3)
+    with dc1:
+        st.download_button(
+            "完全版 (.md)",
+            data=_script.encode("utf-8"),
+            file_name=f"{_ts}_{_dl_name}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key="dl_full_md",
+            help="映像指示・セリフ・演技指示の3列テーブルをそのままMarkdown形式で保存",
+        )
+    with dc2:
+        st.download_button(
+            "台本のみ (.txt)",
+            data=extract_script_only(_script).encode("utf-8"),
+            file_name=f"{_ts}_{_dl_name}_script.txt",
+            mime="text/plain",
+            use_container_width=True,
+            key="dl_script_only",
+            help="セリフ列だけを抽出したプレーンテキスト。読み合わせや練習用",
+        )
+    with dc3:
+        st.download_button(
+            "映像+台本 (.csv)　スライド用",
+            data=extract_slide_csv(_script).encode("utf-8"),
+            file_name=f"{_ts}_{_dl_name}_slide.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="dl_slide_csv",
+            help="セクション・映像テロップ指示・セリフの2列CSV。Claudeに読み込ませてスライド壁打ちに最適",
+        )
 
     # ── プリセット保存（フォーム外で常時動作）──
     st.divider()
