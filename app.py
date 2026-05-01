@@ -1921,7 +1921,46 @@ with st.form("product_form"):
         help="TavilyのAPIキーが設定されている場合に利用できます",
     )
 
+    # ── プリセット保存（フォーム内）──
+    st.divider()
+    st.caption("📌 入力内容をプリセット保存する（保存ボタンを押すと台本は生成されません）")
+    col_pn2, col_pb2 = st.columns([3, 1])
+    with col_pn2:
+        preset_save_name_form = st.text_input(
+            "プリセット名",
+            placeholder="例：スマートイット用、FX商品A用",
+            key="preset_save_name_form",
+        )
+    with col_pb2:
+        st.write("")
+        save_preset_submitted = st.form_submit_button("保存のみ", use_container_width=True)
+
     submitted = st.form_submit_button("台本を生成する（通常モード）", type="primary", use_container_width=True)
+
+# ── プリセット保存処理（フォーム送信後）──────────────────────────────────────
+
+if save_preset_submitted:
+    preset_name_val = st.session_state.get("preset_save_name_form", "").strip()
+    if preset_name_val:
+        if "saved_presets" not in st.session_state:
+            st.session_state["saved_presets"] = {}
+        _save_info = build_info_from_session()
+        existing = st.session_state["saved_presets"]
+        save_name = preset_name_val
+        if save_name in existing:
+            n = 2
+            while f"{preset_name_val}（{n}）" in existing:
+                n += 1
+            save_name = f"{preset_name_val}（{n}）"
+        st.session_state["saved_presets"][save_name] = _save_info
+        st.session_state.last_info = _save_info
+        save_presets_to_file(st.session_state["saved_presets"])
+        if save_name != preset_name_val:
+            st.success(f"「{preset_name_val}」が既に存在するため「{save_name}」として保存しました。")
+        else:
+            st.success(f"「{save_name}」を保存しました。左のサイドバーから呼び出せます。")
+    else:
+        st.warning("プリセット名を入力してください")
 
 # ── 生成処理 ──────────────────────────────────────────────────────────────────
 
@@ -2578,33 +2617,3 @@ if "current_script" in st.session_state:
 
                 except Exception as e:
                     st.error(f"スライド修正エラー: {e}")
-
-# ── プリセット保存（常時表示）─────────────────────────────────────────────────
-st.divider()
-st.subheader("この入力内容を保存する")
-col_pn, col_pb = st.columns([3, 1])
-with col_pn:
-    preset_name = st.text_input("プリセット名", placeholder="例：スマートイット用、FX商品A用", key="preset_save_name")
-with col_pb:
-    st.write("")
-    if st.button("保存する", use_container_width=True, key="save_preset_btn"):
-        if preset_name:
-            if "saved_presets" not in st.session_state:
-                st.session_state["saved_presets"] = {}
-            _save_info = build_info_from_session()
-            existing = st.session_state["saved_presets"]
-            save_name = preset_name
-            if save_name in existing:
-                n = 2
-                while f"{preset_name}（{n}）" in existing:
-                    n += 1
-                save_name = f"{preset_name}（{n}）"
-            st.session_state["saved_presets"][save_name] = _save_info
-            st.session_state.last_info = _save_info
-            save_presets_to_file(st.session_state["saved_presets"])
-            if save_name != preset_name:
-                st.success(f"「{preset_name}」が既に存在するため「{save_name}」として保存しました。")
-            else:
-                st.success(f"「{save_name}」を保存しました。左のサイドバーから呼び出せます。")
-        else:
-            st.warning("プリセット名を入力してください")
