@@ -36,15 +36,17 @@ PRESET_SIMPLE_KEYS = [
     "structure_type", "include_knowhow", "knowhow_theme", "knowhow_notes",
     "name", "category", "seller_name", "seller_first_person", "seller_profile",
     "interviewer_name", "interviewer_first_person", "interviewer_profile", "seller_authority",
+    "seller_story", "mechanism",
     "catchcopy", "target_audience", "result1", "result2",
     "monthly_return", "ease_of_start",
     "voice1", "voice2", "voice3",
-    "pain_points", "why_now",
+    "pain_points", "why_now", "vs_competition", "before_after",
     "third_party_type", "third_party_name", "third_party_points",
     "regular_price", "special_price", "limited_time", "limited_seats",
     "installment", "bonuses",
     "episode_structure", "closing_strength", "video_duration", "notes",
     "sales_flow_type", "sales_start_day", "consultation_method",
+    "use_episode_themes",
 ]
 
 
@@ -61,6 +63,8 @@ def load_preset_to_session(preset):
         st.session_state[f"comment_include_{i}"] = v
     for i, v in enumerate(preset.get("comment_prompts", [""]*5)):
         st.session_state[f"comment_{i}"] = v
+    for i, v in enumerate(preset.get("episode_themes", [""]*5)):
+        st.session_state[f"episode_theme_{i}"] = v if i < 5 else ""
 
 
 def clear_form_state():
