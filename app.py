@@ -349,7 +349,7 @@ def build_system_prompt(samples):
     return [instruction_block, framework_block, samples_block]
 
 
-def build_user_prompt(info):
+def build_user_prompt(info, output_format="完全版"):
     strengths = [s for s in info.get("strengths", []) if s]
     strengths_str = "\n".join(f"  - {s}" for s in strengths) or "  （未入力）"
 
@@ -517,12 +517,18 @@ def build_user_prompt(info):
         "- **書き言葉（〜である・〜のである）は絶対禁止**。必ず話し言葉（〜ですよね・〜なんです）で書くこと",
         "- **抽象表現の完全禁止**：「素晴らしいです」「重要です」「人生が変わります」「大変でした」は一切使わない。視聴者が脳内で映像化できる具体描写で語ること",
         "- **深掘りの意識**：重要なトピックは【主張→理由→具体例・例え話→ベネフィット】の流れを意識して深く語ること。ただし会話の自然な流れを壊してまで型に当てはめないこと",
-        "- 台本は必ず以下の**3カラム Markdownテーブル形式**で出力すること：",
-        "  | 映像/テロップ指示 | 演者のセリフ | 演技/効果音の指示 |",
-        "  |---|---|---|",
-        "  | [Bロール：〇〇] | 「〜ですよね。」 | [カメラ目線・ゆっくり] |",
-        "  - 映像/テロップ: [Bロール：〇〇] [テロップ：〇〇] [画面切り替え] など",
-        "  - 演技指示: [1秒の間] [カメラ目線で強調] [SE：〇〇] [場面転換] など",
+        *([
+            "- **セリフのみをプレーンテキストで出力する**（テーブル不要）",
+            "- 映像指示・演技指示は書かない。演者のセリフだけを自然な段落で書くこと",
+            "- 話者が複数いる場合は行頭に「【販売者】」「【インタビュアー】」のように記載する",
+        ] if output_format == "台本のみ" else [
+            "- 台本は必ず以下の**3カラム Markdownテーブル形式**で出力すること：",
+            "  | 映像/テロップ指示 | 演者のセリフ | 演技/効果音の指示 |",
+            "  |---|---|---|",
+            "  | [Bロール：〇〇] | 「〜ですよね。」 | [カメラ目線・ゆっくり] |",
+            "  - 映像/テロップ: [Bロール：〇〇] [テロップ：〇〇] [画面切り替え] など",
+            "  - 演技指示: [1秒の間] [カメラ目線で強調] [SE：〇〇] [場面転換] など",
+        ]),
         "- 各セクションの前に ## セクション名（〜分〜秒） の見出しを入れること",
         "- 話数構成が指定されている場合は、その構成に合わせて台本を分けてください",
         "- コメント促進パートが必要な場合は各話の動画末尾に必ず含めてください",
@@ -1929,6 +1935,15 @@ with st.form("product_form"):
 
     st.divider()
 
+    st.markdown("**出力形式を選択**")
+    output_format_normal = st.radio(
+        "出力形式",
+        ["台本のみ（セリフのみ・API費用削減）", "完全版（映像指示+セリフ+演技指示）"],
+        key="normal_output_format",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
     use_trend_search = st.checkbox(
         "最新トレンドをWeb検索して台本に反映する",
         value=False,
@@ -2109,7 +2124,9 @@ if submitted:
         "sales_start_day": sales_start_day,
         "consultation_method": consultation_method,
     }
-    user_prompt = build_user_prompt(info)
+    _fmt_raw_n = st.session_state.get("normal_output_format", "完全版（映像指示+セリフ+演技指示）")
+    _output_fmt_n = "台本のみ" if "台本のみ" in _fmt_raw_n else "完全版"
+    user_prompt = build_user_prompt(info, _output_fmt_n)
     display_name = name if name else "台本"
 
     # トレンド検索
