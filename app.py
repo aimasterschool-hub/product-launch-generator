@@ -125,7 +125,7 @@ def clear_form_state():
 
 OUTPUT_DIR   = Path("output")
 PRESETS_FILE = Path("presets.json")
-MODEL = "claude-opus-4-7"
+MODEL = "claude-sonnet-4-6"
 
 # ── 成功台本の設計図（心理構造フレームワーク） ──────────────────────────────
 SUCCESS_FRAMEWORK = """
