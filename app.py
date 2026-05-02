@@ -127,6 +127,45 @@ OUTPUT_DIR   = Path("output")
 PRESETS_FILE = Path("presets.json")
 MODEL = "claude-sonnet-4-6"
 
+# claude-sonnet-4-6 料金（USD / 1トークン）
+_PRICE_INPUT        = 3.00  / 1_000_000
+_PRICE_OUTPUT       = 15.00 / 1_000_000
+_PRICE_CACHE_WRITE  = 3.75  / 1_000_000
+_PRICE_CACHE_READ   = 0.30  / 1_000_000
+_JPY_RATE           = 150   # 1USD = 150円（概算）
+
+
+def calculate_cost(stats: dict) -> float:
+    """トークン使用量からAPI費用（USD）を計算する。"""
+    return (
+        stats.get("input_tokens", 0)          * _PRICE_INPUT
+        + stats.get("output_tokens", 0)        * _PRICE_OUTPUT
+        + stats.get("cache_creation_tokens", 0) * _PRICE_CACHE_WRITE
+        + stats.get("cache_read_tokens", 0)    * _PRICE_CACHE_READ
+    )
+
+
+def stats_from_usage(usage) -> dict:
+    """Anthropic usage オブジェクトを stats dict に変換する。"""
+    return {
+        "input_tokens":          usage.input_tokens,
+        "output_tokens":         usage.output_tokens,
+        "cache_creation_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+        "cache_read_tokens":     getattr(usage, "cache_read_input_tokens", 0),
+    }
+
+
+def add_cost_log(label: str, cost: float, mode: str):
+    """セッションのコストログにエントリを追加する。"""
+    if "cost_log" not in st.session_state:
+        st.session_state.cost_log = []
+    st.session_state.cost_log.append({
+        "label": label,
+        "cost":  cost,
+        "mode":  mode,
+        "time":  datetime.now().strftime("%H:%M"),
+    })
+
 # ── 成功台本の設計図（心理構造フレームワーク） ──────────────────────────────
 SUCCESS_FRAMEWORK = """
 ## 成功するプロダクトローンチ台本の構成要素（心理設計の型）
@@ -1665,6 +1704,30 @@ with st.sidebar:
     if st.button("再読み込み", use_container_width=True):
         st.rerun()
 
+    # ── API費用トラッカー ──
+    st.divider()
+    st.header("API費用")
+    _cost_log = st.session_state.get("cost_log", [])
+    _total_usd = sum(e["cost"] for e in _cost_log)
+    _total_jpy = _total_usd * _JPY_RATE
+    col_cost, col_reset = st.columns([3, 1])
+    with col_cost:
+        st.metric("セッション合計", f"${_total_usd:.4f}", f"約{_total_jpy:.0f}円")
+    with col_reset:
+        st.write("")
+        if st.button("リセット", use_container_width=True, key="reset_cost_log"):
+            st.session_state.cost_log = []
+            st.rerun()
+    if _cost_log:
+        with st.expander("内訳を見る", expanded=False):
+            for _e in reversed(_cost_log):
+                st.markdown(
+                    f"**{_e['time']}** {_e['label']}  \n"
+                    f"${_e['cost']:.4f}（約{_e['cost'] * _JPY_RATE:.0f}円）　`{_e['mode']}`"
+                )
+    else:
+        st.caption("まだ生成していません")
+
 if "system_blocks" not in st.session_state or st.session_state.get("samples_count") != len(samples):
     st.session_state.system_blocks = build_system_prompt(samples)
     st.session_state.samples_count = len(samples)
@@ -2157,6 +2220,7 @@ if submitted:
         st.session_state.display_name = display_name
         st.session_state.last_info = info
         st.session_state.last_stats = stats
+        add_cost_log(display_name, calculate_cost(stats), "通常モード")
 
     except anthropic.APIError as e:
         st.error(f"APIエラー: {e}")
@@ -2217,6 +2281,11 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     for _t in _stream.text_stream:
                         _blk_text += _t
                         _blk_ph.markdown(_blk_text)
+                    _blk_final = _stream.get_final_message()
+                _blk_cost = calculate_cost(stats_from_usage(_blk_final.usage))
+                st.session_state.block_gen_cost_accum = (
+                    st.session_state.get("block_gen_cost_accum", 0.0) + _blk_cost
+                )
                 # 話（エピソード）が変わったときにヘッダーを付与
                 _cur_ep = _block.get('episode_header', '')
                 _prev_ep = st.session_state.get("block_gen_current_episode", "")
@@ -2237,6 +2306,12 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     st.session_state.last_info = st.session_state.get("block_gen_info", {})
                     st.session_state.last_stats = {}
                     save_script(_final_script, _bdn)
+                    add_cost_log(
+                        f"台本生成：{_bdn}",
+                        st.session_state.get("block_gen_cost_accum", 0.0),
+                        "高精度（台本生成）",
+                    )
+                    st.session_state.block_gen_cost_accum = 0.0
                 st.rerun()
             except anthropic.APIError as _e:
                 st.error(f"APIエラー: {_e}")
@@ -2297,6 +2372,13 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     for text in stream.text_stream:
                         outline_text += text
                         placeholder_o.markdown(outline_text)
+                    _outline_final = stream.get_final_message()
+                _outline_stats = stats_from_usage(_outline_final.usage)
+                add_cost_log(
+                    f"構成案：{outline_info.get('name', '台本')}",
+                    calculate_cost(_outline_stats),
+                    "高精度（構成案）",
+                )
                 st.session_state["outline_draft"] = outline_text
                 st.session_state["outline_info"] = outline_info
                 st.rerun()
@@ -2347,6 +2429,7 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     st.session_state.block_gen_display_name = display_name2
                     st.session_state.block_gen_current_episode = ""
                     st.session_state.block_gen_output_format = _output_fmt
+                    st.session_state.block_gen_cost_accum = 0.0
                     st.rerun()
                 else:
                     try:
