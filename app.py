@@ -123,8 +123,9 @@ def clear_form_state():
     st.session_state["f_interviewer_first_person"] = "私"
 
 
-OUTPUT_DIR   = Path("output")
-PRESETS_FILE = Path("presets.json")
+OUTPUT_DIR    = Path("output")
+PRESETS_FILE  = Path("presets.json")
+COST_LOG_FILE = Path("cost_log.json")
 MODEL = "claude-sonnet-4-6"
 
 # claude-sonnet-4-6 料金（USD / 1トークン）
@@ -155,72 +156,42 @@ def stats_from_usage(usage) -> dict:
     }
 
 
+def load_cost_log() -> list:
+    """cost_log.json からログを読み込む。"""
+    try:
+        if COST_LOG_FILE.exists():
+            return json.loads(COST_LOG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+
+def save_cost_log(log: list):
+    """cost_log.json にログを書き込む。"""
+    try:
+        COST_LOG_FILE.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def add_cost_log(label: str, cost: float, mode: str):
-    """セッションのコストログにエントリを追加する。"""
+    """コストログにエントリを追加し、ファイルに永続化する。"""
     if "cost_log" not in st.session_state:
-        st.session_state.cost_log = []
-    st.session_state.cost_log.append({
+        st.session_state.cost_log = load_cost_log()
+    entry = {
+        "date":  datetime.now().strftime("%Y-%m-%d"),
+        "time":  datetime.now().strftime("%H:%M"),
         "label": label,
         "cost":  cost,
         "mode":  mode,
-        "time":  datetime.now().strftime("%H:%M"),
-    })
-
-
-# ブロック数の目安（動画尺 → 1話あたりのブロック数）
-_BLOCKS_PER_EPISODE = {
-    "3分": 3, "5分": 4, "7分": 5, "10分": 6, "15分": 7,
-    "20分": 8, "30分": 10, "45分": 11, "60分": 12, "90分": 14, "120分": 16,
-}
-
-
-def _sample_input_tokens(samples: list) -> int:
-    """サンプル台本＋システム固定部のトークン数を推定する。"""
-    sample_chars = sum(len(s["content"]) for s in samples)
-    sample_tokens = int(sample_chars / 1.5)   # 日本語: 約1.5字/token
-    return sample_tokens + 3_000              # instruction + framework
-
-
-def estimate_cost_normal(samples: list, video_duration: str, episode_count: int = 1, output_format: str = "完全版") -> float:
-    """通常モードの予測費用（USD）を返す。"""
-    input_tok = _sample_input_tokens(samples) + 2_000   # user prompt
-    dur_key = video_duration.split("（")[0]
-    # 出力は完全版でDURATION_MAX_TOKENS、台本のみは約55%
-    from_duration = {
-        "3分": 2048, "5分": 3000, "7分": 4096, "10分": 6000, "15分": 8192,
-        "20分": 12000, "30分": 16000, "45分": 20000, "60分": 24000,
-        "90分": 28000, "120分": 32000,
     }
-    out_tok_per_ep = from_duration.get(dur_key, 4096)
-    if output_format == "台本のみ":
-        out_tok_per_ep = int(out_tok_per_ep * 0.55)
-    output_tok = out_tok_per_ep * episode_count
-    # 最初の呼び出し → キャッシュ書き込み
-    return input_tok * _PRICE_CACHE_WRITE + output_tok * _PRICE_OUTPUT
-
-
-def estimate_cost_outline(samples: list, episode_count: int = 1) -> float:
-    """高精度モード①（構成案）の予測費用（USD）を返す。"""
-    input_tok = _sample_input_tokens(samples) + 1_500
-    out_tok = min(4_000 * episode_count, 20_000)
-    return input_tok * _PRICE_CACHE_WRITE + out_tok * _PRICE_OUTPUT
-
-
-def estimate_cost_blocks(samples: list, video_duration: str, episode_count: int = 1, output_format: str = "完全版") -> float:
-    """高精度モード②（台本生成）の予測費用（USD）を返す。"""
-    input_tok = _sample_input_tokens(samples) + 2_000
-    dur_key = video_duration.split("（")[0]
-    num_blocks = _BLOCKS_PER_EPISODE.get(dur_key, 8) * episode_count
-    out_per_block = 2_500 if output_format == "台本のみ" else 4_500
-    # 1ブロック目: キャッシュ書き込み（アウトライン後なのでREAD）
-    # ②開始時点でアウトラインのキャッシュが5分以内なら全ブロックREAD
-    cost = (input_tok * _PRICE_CACHE_READ + out_per_block * _PRICE_OUTPUT) * num_blocks
-    return cost
+    st.session_state.cost_log.append(entry)
+    save_cost_log(st.session_state.cost_log)
 
 
 def fmt_cost(usd: float) -> str:
     """費用を「$X.XX（約XX円）」形式の文字列にする。"""
-    return f"${usd:.3f}（約{usd * _JPY_RATE:.0f}円）"
+    return f"${usd:.4f}（約{usd * _JPY_RATE:.0f}円）"
 
 # ── 成功台本の設計図（心理構造フレームワーク） ──────────────────────────────
 SUCCESS_FRAMEWORK = """
@@ -1763,31 +1734,42 @@ with st.sidebar:
     # ── API費用トラッカー ──
     st.divider()
     st.header("API費用")
-    _cost_log = st.session_state.get("cost_log", [])
+    if "cost_log" not in st.session_state:
+        st.session_state.cost_log = load_cost_log()
+    _cost_log = st.session_state.cost_log
+
     _total_usd = sum(e["cost"] for e in _cost_log)
-    _total_jpy = _total_usd * _JPY_RATE
     col_cost, col_reset = st.columns([3, 1])
     with col_cost:
-        st.metric("セッション合計", f"${_total_usd:.4f}", f"約{_total_jpy:.0f}円")
+        st.metric("累計合計", f"${_total_usd:.4f}", f"約{_total_usd * _JPY_RATE:.0f}円")
     with col_reset:
         st.write("")
         if st.button("リセット", use_container_width=True, key="reset_cost_log"):
             st.session_state.cost_log = []
+            save_cost_log([])
             st.rerun()
+
     if _cost_log:
-        with st.expander("内訳を見る", expanded=False):
-            for _e in reversed(_cost_log):
-                st.markdown(
-                    f"**{_e['time']}** {_e['label']}  \n"
-                    f"${_e['cost']:.4f}（約{_e['cost'] * _JPY_RATE:.0f}円）　`{_e['mode']}`"
-                )
+        # 日付ごとに集計・表示
+        from collections import defaultdict
+        _by_date = defaultdict(list)
+        for _e in _cost_log:
+            _by_date[_e.get("date", "不明")].append(_e)
+        for _date in sorted(_by_date.keys(), reverse=True):
+            _day_entries = _by_date[_date]
+            _day_total = sum(e["cost"] for e in _day_entries)
+            with st.expander(f"{_date}　{fmt_cost(_day_total)}", expanded=(_date == datetime.now().strftime("%Y-%m-%d"))):
+                for _e in reversed(_day_entries):
+                    st.markdown(
+                        f"**{_e['time']}** {_e['label']}  \n"
+                        f"{fmt_cost(_e['cost'])}　`{_e['mode']}`"
+                    )
     else:
         st.caption("まだ生成していません")
 
 if "system_blocks" not in st.session_state or st.session_state.get("samples_count") != len(samples):
     st.session_state.system_blocks = build_system_prompt(samples)
     st.session_state.samples_count = len(samples)
-st.session_state["_samples_cache"] = samples
 
 # ── フォーム ─────────────────────────────────────────────────────────────────
 
@@ -2084,17 +2066,6 @@ with st.form("product_form"):
     with col_pb2:
         st.write("")
         save_preset_submitted = st.form_submit_button("保存のみ", use_container_width=True)
-
-    # ── 予測費用 ──
-    _est_dur   = st.session_state.get("f_video_duration", "7分（約2,100文字）")
-    _est_ep    = st.session_state.get("f_episode_structure", "1話完結")
-    _est_ep_n  = int(_est_ep[0]) if _est_ep[0].isdigit() else 1
-    _est_fmt   = st.session_state.get("normal_output_format", "完全版（映像指示+セリフ+演技指示）")
-    _est_fmt_v = "台本のみ" if "台本のみ" in _est_fmt else "完全版"
-    _est_c     = estimate_cost_normal(
-        st.session_state.get("_samples_cache", []), _est_dur, _est_ep_n, _est_fmt_v
-    )
-    st.caption(f"💰 予測費用：{fmt_cost(_est_c)}　※キャッシュ・実際の出力長により変動します")
 
     submitted = st.form_submit_button("台本を生成する（通常モード）", type="primary", use_container_width=True)
 
@@ -2400,21 +2371,6 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
         key="hq_use_trend",
         disabled=not tavily_api_key,
         help="TavilyのAPIキーが設定されている場合に利用できます",
-    )
-
-    # ── 予測費用（高精度モード）──
-    _hq_dur  = st.session_state.get("f_video_duration", "7分（約2,100文字）")
-    _hq_ep   = st.session_state.get("f_episode_structure", "1話完結")
-    _hq_ep_n = int(_hq_ep[0]) if _hq_ep[0].isdigit() else 1
-    _hq_fmt_raw = st.session_state.get("hq_output_format", "完全版（映像指示+セリフ+演技指示）")
-    _hq_fmt  = "台本のみ" if "台本のみ" in _hq_fmt_raw else "完全版"
-    _hq_samp = st.session_state.get("_samples_cache", [])
-    _est_outline = estimate_cost_outline(_hq_samp, _hq_ep_n)
-    _est_blocks  = estimate_cost_blocks(_hq_samp, _hq_dur, _hq_ep_n, _hq_fmt)
-    st.caption(
-        f"💰 予測費用　① 構成案：{fmt_cost(_est_outline)}　"
-        f"② 台本生成：{fmt_cost(_est_blocks)}　"
-        f"合計：{fmt_cost(_est_outline + _est_blocks)}"
     )
 
     col_hq1, col_hq2 = st.columns(2)
