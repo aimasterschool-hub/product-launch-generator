@@ -266,9 +266,13 @@ def save_presets_to_file(presets):
 def load_samples():
     SAMPLES_DIR.mkdir(exist_ok=True)
     samples = []
-    files = []
-    for pattern in ["*.txt", "*.rtf", "*.rtfd"]:
-        files.extend(SAMPLES_DIR.glob(pattern))
+    # .txt優先：同名の.rtf/.rtfdがあっても.txtを使う
+    txt_stems = {p.stem for p in SAMPLES_DIR.glob("*.txt")}
+    files = list(SAMPLES_DIR.glob("*.txt"))
+    for pattern in ["*.rtf", "*.rtfd"]:
+        for p in SAMPLES_DIR.glob(pattern):
+            if p.stem not in txt_stems:
+                files.append(p)
     for file_path in sorted(set(files)):
         try:
             if file_path.suffix.lower() in (".rtf", ".rtfd"):
