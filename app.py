@@ -810,7 +810,7 @@ def parse_outline_blocks(outline_text):
     return blocks
 
 
-def build_block_script_prompt(outline, block, block_num, total_blocks, previous_script, info):
+def build_block_script_prompt(outline, block, block_num, total_blocks, previous_script, info, output_format="完全版"):
     """1ブロック分の台本を生成するプロンプト。"""
     video_duration = info.get("video_duration", "7分（約2,100文字）")
     min_chars = min_chars_per_block(video_duration)
@@ -822,6 +822,19 @@ def build_block_script_prompt(outline, block, block_num, total_blocks, previous_
     if previous_script:
         tail = previous_script[-600:]
         prev_context = f"\n## 直前ブロックの末尾（流れを繋げるために参照）\n{tail}\n\n---\n"
+
+    if output_format == "台本のみ":
+        format_rule = (
+            "- **セリフのみをプレーンテキストで出力する**（テーブル不要）\n"
+            "- 映像指示・演技指示は書かない。演者のセリフだけを自然な段落で書くこと\n"
+            "- 各発言の話者名が複数いる場合は「【販売者】」「【インタビュアー】」のように行頭に記載する"
+        )
+    else:
+        format_rule = (
+            "- **3カラム Markdownテーブル形式**で出力する：\n"
+            "  | 映像/テロップ指示 | 演者のセリフ | 演技/効果音の指示 |\n"
+            "  |---|---|---|"
+        )
 
     return f"""以下の【全体構成案】の中から、**今回のブロックのみ**の台本を生成してください。他のブロックは書かないこと。
 
@@ -843,9 +856,7 @@ def build_block_script_prompt(outline, block, block_num, total_blocks, previous_
 - **深掘りの意識**：重要なトピックは【主張→理由→具体的なエピソード・例え話→ベネフィット】の流れを意識して語ること。型に機械的に当てはめず、会話の自然な流れを最優先にすること
 - **抽象表現は避ける**：「素晴らしいです」「重要です」「大変でした」より、視聴者が脳内で映像化できる具体描写を使うこと
 - 話し方スタイル：{dialogue_style}
-- **3カラム Markdownテーブル形式**で出力する：
-  | 映像/テロップ指示 | 演者のセリフ | 演技/効果音の指示 |
-  |---|---|---|
+{format_rule}
 - 書き言葉（〜である）絶対禁止、話し言葉のみ
 """
 
@@ -2173,7 +2184,8 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
             _blk_prompt = build_block_script_prompt(
                 st.session_state.get("block_gen_outline", ""),
                 _block, _bi + 1, _bt, _prev,
-                st.session_state.get("block_gen_info", {})
+                st.session_state.get("block_gen_info", {}),
+                st.session_state.get("block_gen_output_format", "完全版"),
             )
             _blk_text = ""
             _blk_ph = st.empty()
@@ -2212,6 +2224,15 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
             except anthropic.APIError as _e:
                 st.error(f"APIエラー: {_e}")
                 st.session_state.block_gen_active = False
+
+    st.markdown("**出力形式を選択**")
+    hq_output_format = st.radio(
+        "出力形式",
+        ["台本のみ（セリフのみ・API費用削減）", "完全版（映像指示+セリフ+演技指示）"],
+        key="hq_output_format",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
     hq_trend = st.checkbox(
         "最新トレンドをWeb検索して構成案に反映する",
@@ -2295,6 +2316,9 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                 blocks = parse_outline_blocks(outline_edit) if use_block_mode else []
                 use_block_mode = use_block_mode and len(blocks) >= 2
 
+                _fmt_raw = st.session_state.get("hq_output_format", "完全版（映像指示+セリフ+演技指示）")
+                _output_fmt = "台本のみ" if "台本のみ" in _fmt_raw else "完全版"
+
                 if use_block_mode:
                     # ブロック分割生成：キューを初期化してrerunで1ブロックずつ処理
                     st.session_state.block_gen_active = True
@@ -2305,6 +2329,7 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
                     st.session_state.block_gen_info = outline_info2
                     st.session_state.block_gen_display_name = display_name2
                     st.session_state.block_gen_current_episode = ""
+                    st.session_state.block_gen_output_format = _output_fmt
                     st.rerun()
                 else:
                     try:
