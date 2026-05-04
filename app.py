@@ -861,6 +861,15 @@ def parse_outline_blocks(outline_text):
     for line in outline_text.split('\n'):
         s = line.strip()
         if re.match(r'^# ', s) and '第' in s:
+            # 話数ヘッダーが来たら直前ブロックを旧episode_headerで先に保存
+            if current_title and current_lines:
+                blocks.append({
+                    'title': current_title,
+                    'episode_header': episode_header,
+                    'content': '\n'.join(current_lines),
+                })
+                current_title = ""
+                current_lines = []
             episode_header = s
         elif re.match(r'^## \[', s):
             if current_title and current_lines:
@@ -1552,7 +1561,7 @@ def extract_script_only(script_text):
             cells = [c.strip() for c in s.split('|')[1:-1]]
             if len(cells) >= 2:
                 script_cell = cells[1]
-                if '演者のセリフ' in script_cell or 'セリフ' in script_cell:
+                if script_cell in ('演者のセリフ', 'セリフ'):
                     continue  # ヘッダー行
                 if script_cell:
                     result.append(script_cell)
