@@ -1607,6 +1607,113 @@ def save_script(script, product_name):
     return output_path
 
 
+def extract_info_from_document(text: str) -> dict:
+    """アップロードされたテキストから商品情報を抽出してdictで返す"""
+    import json as _json
+    client_ex = anthropic.Anthropic()
+    prompt = f"""以下のテキストからローンチ動画台本生成に必要な情報を抽出してJSONで返してください。
+情報がない場合は空文字列 "" を返してください。「情報なし」と書かれている場合も "" にしてください。
+
+返すJSONのキーと意味:
+{{
+  "name": "商品名",
+  "category": "ジャンル（FX・為替投資/株式投資・トレード/仮想通貨・Web3/副業・ビジネス/美容・スキンケア/健康・ダイエット/教育・スキルアップ/テック・SaaS/食品・サプリ/その他 から最も近いものを1つ）",
+  "catchcopy": "キャッチコピー",
+  "target_audience": "ターゲット層",
+  "seller_name": "販売者名",
+  "seller_first_person": "販売者の一人称（私/僕/おれ のどれか）",
+  "seller_profile": "販売者のプロフィール",
+  "seller_authority": "販売者の権威・実績",
+  "seller_story": "原体験・どん底ストーリー",
+  "interviewer_name": "インタビュアー名（いない場合は空文字）",
+  "interviewer_profile": "インタビュアーのプロフィール",
+  "result1": "実績数値①",
+  "result2": "実績数値②",
+  "monthly_return": "月利・月収目安",
+  "ease_of_start": "始めやすさの根拠",
+  "mechanism": "独自メカニズム・勝てる理由",
+  "strength_0": "商品の強み①",
+  "strength_1": "商品の強み②",
+  "strength_2": "商品の強み③",
+  "strength_3": "商品の強み④",
+  "voice_0": "利用者の声①（名前・属性と声のセット）",
+  "voice_1": "利用者の声②",
+  "voice_2": "利用者の声③",
+  "pain_points": "視聴者のペイン（悩み・不安）",
+  "why_now": "なぜ今必要か",
+  "vs_competition": "競合との違い・失敗体験との対比",
+  "before_after": "購入後のビフォーアフター",
+  "third_party_name": "第三者の名前・肩書き（いない場合は空文字）",
+  "third_party_points": "第三者の裏付けポイント"
+}}
+
+テキスト:
+{text[:10000]}
+
+JSONのみ返してください。"""
+
+    resp = client_ex.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = resp.content[0].text
+    start = raw.find("{")
+    end   = raw.rfind("}") + 1
+    if start >= 0 and end > start:
+        try:
+            return _json.loads(raw[start:end])
+        except Exception:
+            pass
+    return {}
+
+
+def apply_extracted_info(extracted: dict):
+    """抽出した情報をセッションステートに反映する"""
+    simple_map = {
+        "name":             "f_name",
+        "catchcopy":        "f_catchcopy",
+        "target_audience":  "f_target_audience",
+        "seller_name":      "f_seller_name",
+        "seller_profile":   "f_seller_profile",
+        "seller_authority": "f_seller_authority",
+        "seller_story":     "f_seller_story",
+        "interviewer_name": "f_interviewer_name",
+        "interviewer_profile": "f_interviewer_profile",
+        "result1":          "f_result1",
+        "result2":          "f_result2",
+        "monthly_return":   "f_monthly_return",
+        "ease_of_start":    "f_ease_of_start",
+        "mechanism":        "f_mechanism",
+        "pain_points":      "f_pain_points",
+        "why_now":          "f_why_now",
+        "vs_competition":   "f_vs_competition",
+        "before_after":     "f_before_after",
+        "third_party_name": "f_third_party_name",
+        "third_party_points": "f_third_party_points",
+    }
+    for ext_key, ss_key in simple_map.items():
+        val = extracted.get(ext_key, "")
+        if val:
+            st.session_state[ss_key] = val
+    for i in range(4):
+        val = extracted.get(f"strength_{i}", "")
+        if val:
+            st.session_state[f"str_{i}"] = val
+    for i in range(3):
+        val = extracted.get(f"voice_{i}", "")
+        if val:
+            st.session_state[f"f_voice{i+1}"] = val
+    valid_cats = ["FX・為替投資", "株式投資・トレード", "仮想通貨・Web3", "副業・ビジネス",
+                  "美容・スキンケア", "健康・ダイエット", "教育・スキルアップ", "テック・SaaS", "食品・サプリ", "その他"]
+    cat = extracted.get("category", "")
+    if cat in valid_cats:
+        st.session_state["f_category"] = cat
+    fp = extracted.get("seller_first_person", "")
+    if fp in ["私", "僕", "おれ"]:
+        st.session_state["f_seller_first_person"] = fp
+
+
 # ── UI ──────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="台本生成システム", page_icon="🎬", layout="wide")
@@ -1781,6 +1888,48 @@ if "system_blocks" not in st.session_state or st.session_state.get("samples_coun
     st.session_state.samples_count = len(samples)
 
 # ── フォーム ─────────────────────────────────────────────────────────────────
+
+# ── 資料アップロード → 自動入力 ──────────────────────────────────────────────
+
+st.subheader("📂 資料から自動入力（任意）")
+st.caption("Claude.aiで整理したテキストファイルをアップロードすると、各項目に自動で入力されます")
+
+doc_file = st.file_uploader("整理済みテキストファイル（.txt）", type=["txt"], key="doc_uploader")
+if doc_file:
+    if st.button("情報を抽出して自動入力する", type="primary"):
+        with st.spinner("情報を抽出中...（10〜20秒）"):
+            doc_text = doc_file.getvalue().decode("utf-8")
+            extracted = extract_info_from_document(doc_text)
+            apply_extracted_info(extracted)
+            st.session_state["_extracted_done"] = True
+        st.success("自動入力が完了しました。不足項目を確認して入力してください。")
+        st.rerun()
+
+# 不足情報の確認・補完
+REQUIRED_FIELDS = [
+    ("f_name",            "商品名"),
+    ("f_seller_name",     "販売者名"),
+    ("f_catchcopy",       "キャッチコピー"),
+    ("f_target_audience", "ターゲット層"),
+    ("f_seller_profile",  "販売者プロフィール"),
+    ("f_seller_story",    "原体験・どん底ストーリー"),
+    ("f_result1",         "実績数値①"),
+    ("f_mechanism",       "独自メカニズム・勝てる理由"),
+    ("f_pain_points",     "視聴者のペイン"),
+]
+
+if st.session_state.get("_extracted_done"):
+    missing = [(key, label) for key, label in REQUIRED_FIELDS if not st.session_state.get(key, "").strip()]
+    if missing:
+        st.warning(f"⚠️ 以下の{len(missing)}項目が未入力です。入力してから生成してください。")
+        for key, label in missing:
+            val = st.text_area(label, key=f"missing_{key}", height=80)
+            if val.strip():
+                st.session_state[key] = val.strip()
+    else:
+        st.success("✅ 必須項目はすべて入力済みです。下のフォームを確認して生成してください。")
+
+st.divider()
 
 with st.form("product_form"):
 
