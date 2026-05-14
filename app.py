@@ -1728,7 +1728,8 @@ def apply_extracted_info(extracted: dict):
         st.session_state["f_seller_first_person"] = fp
     if extracted.get("structure_type") in ["従来型", "フロントエンド型"]:
         st.session_state["f_structure_type"] = extracted["structure_type"]
-    if extracted.get("include_knowhow") == "true":
+    include_kh = extracted.get("include_knowhow")
+    if include_kh == "true" or include_kh is True:
         st.session_state["f_include_knowhow"] = True
         if extracted.get("knowhow_theme"):
             st.session_state["f_knowhow_theme"] = extracted["knowhow_theme"]
