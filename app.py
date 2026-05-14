@@ -1644,7 +1644,21 @@ def extract_info_from_document(text: str) -> dict:
   "vs_competition": "競合との違い・失敗体験との対比",
   "before_after": "購入後のビフォーアフター",
   "third_party_name": "第三者の名前・肩書き（いない場合は空文字）",
-  "third_party_points": "第三者の裏付けポイント"
+  "third_party_points": "第三者の裏付けポイント",
+  "structure_type": "構成タイプ（「各話の構成メモ」の1話目が教育・ノウハウ提供から始まる場合は「フロントエンド型」、実績紹介→商品説明→販売の流れなら「従来型」）",
+  "include_knowhow": "ノウハウパートの有無（structure_typeがフロントエンド型かつ1話目に教える内容があれば「true」、それ以外は「false」）",
+  "knowhow_theme": "ノウハウのテーマ（include_knowhowがtrueの場合、1話目で教える内容・手法のテーマ。例：FXの裁量トレードロジック（ADX・BB・EMA200）。なければ空文字）",
+  "regular_price": "定価・通常価格（例：78,000円）",
+  "special_price": "特別価格・割引価格（なければ空文字）",
+  "limited_time": "期間限定条件（なければ空文字）",
+  "limited_seats": "先着・定員制限（なければ空文字）",
+  "bonuses": "特典内容（購入者特典・オプト特典をまとめてカンマ区切り。なければ空文字）",
+  "episode_structure": "話数構成（「各話の構成メモ」に1話分しかなければ「1話完結」、2話なら「2話構成（前編・後編）」、3話なら「3話構成」、4話なら「4話構成」、5話なら「5話構成」）",
+  "episode_theme_0": "第1話の内容・テーマ（「各話の構成メモ」の1話部分をそのまま）",
+  "episode_theme_1": "第2話の内容・テーマ（「各話の構成メモ」の2話部分をそのまま。なければ空文字）",
+  "episode_theme_2": "第3話の内容・テーマ（「各話の構成メモ」の3話部分をそのまま。なければ空文字）",
+  "episode_theme_3": "第4話の内容・テーマ（「各話の構成メモ」の4話部分をそのまま。なければ空文字）",
+  "episode_theme_4": "第5話の内容・テーマ（「各話の構成メモ」の5話部分をそのまま。なければ空文字）"
 }}
 
 テキスト:
@@ -1712,6 +1726,28 @@ def apply_extracted_info(extracted: dict):
     fp = extracted.get("seller_first_person", "")
     if fp in ["私", "僕", "おれ"]:
         st.session_state["f_seller_first_person"] = fp
+    if extracted.get("structure_type") in ["従来型", "フロントエンド型"]:
+        st.session_state["f_structure_type"] = extracted["structure_type"]
+    if extracted.get("include_knowhow") == "true":
+        st.session_state["f_include_knowhow"] = True
+        if extracted.get("knowhow_theme"):
+            st.session_state["f_knowhow_theme"] = extracted["knowhow_theme"]
+    for key in ["regular_price", "special_price", "limited_time", "limited_seats", "bonuses"]:
+        val = extracted.get(key, "")
+        if val:
+            st.session_state[f"f_{key}"] = val
+    valid_structures = ["1話完結", "2話構成（前編・後編）", "3話構成", "4話構成", "5話構成"]
+    ep_struct = extracted.get("episode_structure", "")
+    if ep_struct in valid_structures:
+        st.session_state["f_episode_structure"] = ep_struct
+    has_themes = False
+    for i in range(5):
+        theme = extracted.get(f"episode_theme_{i}", "")
+        if theme:
+            st.session_state[f"episode_theme_{i}"] = theme
+            has_themes = True
+    if has_themes:
+        st.session_state["f_use_episode_themes"] = True
 
 
 # ── UI ──────────────────────────────────────────────────────────────────────
