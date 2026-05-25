@@ -1043,17 +1043,53 @@ def split_script_into_chunks(script):
     return result
 
 
-def search_trends(tavily_api_key, category, product_name):
+def _generate_search_queries(api_key, category, product_name):
+    """Claudeにトレンド検索用クエリを3つ生成させる。"""
+    try:
+        current_year = datetime.now().year
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"ジャンル「{category}」の商品「{product_name}」の販売台本に使える"
+                    f"最新トレンド・時事ネタを調べるための検索クエリを3つ考えてください。\n"
+                    f"・{current_year}年の最新情報が取れるクエリにすること\n"
+                    f"・商品名ではなく市場・ジャンル全体のトレンドを狙うこと\n"
+                    f"・日本語で、1行1クエリで出力すること（番号・説明不要）"
+                )
+            }]
+        )
+        queries = [q.strip() for q in response.content[0].text.strip().split("\n") if q.strip()]
+        return queries[:3]
+    except Exception:
+        current_year = datetime.now().year
+        return [f"{category} {current_year} 最新トレンド 日本"]
+
+
+def search_trends(tavily_api_key, category, product_name, anthropic_api_key=""):
     """カテゴリと商品名に関連する最新トレンドをWeb検索して返す。"""
     try:
-        client = TavilyClient(api_key=tavily_api_key)
-        query = f"{category} {product_name} 最新トレンド 2025 日本"
-        results = client.search(query=query, max_results=3, search_depth="basic")
+        tavily = TavilyClient(api_key=tavily_api_key)
+        queries = _generate_search_queries(anthropic_api_key, category, product_name) if anthropic_api_key else [
+            f"{category} {datetime.now().year} 最新トレンド 日本"
+        ]
         summaries = []
-        for r in results.get("results", []):
-            title = r.get("title", "")
-            content = r.get("content", "")[:300]
-            summaries.append(f"・{title}：{content}")
+        for query in queries:
+            results = tavily.search(
+                query=query,
+                max_results=2,
+                search_depth="advanced",
+                topic="news",
+            )
+            for r in results.get("results", []):
+                title = r.get("title", "")
+                content = r.get("content", "")[:300]
+                published = r.get("published_date", "")
+                date_str = f"（{published[:10]}）" if published else ""
+                summaries.append(f"・{title}{date_str}：{content}")
         return "\n".join(summaries) if summaries else ""
     except Exception:
         return ""
@@ -2429,9 +2465,12 @@ if submitted:
     # トレンド検索
     if use_trend_search and tavily_api_key:
         with st.spinner("最新トレンドを検索中..."):
-            trends = search_trends(tavily_api_key, info.get("category", ""), info.get("name", ""))
+            trends = search_trends(tavily_api_key, info.get("category", ""), info.get("name", ""), anthropic_api_key=api_key)
         if trends:
-            user_prompt += f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n上記のトレンド情報も台本に自然に盛り込んでください。"
+            user_prompt += (
+                f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n"
+                "上記のトレンド情報を台本に反映してください。特に直近1〜2ヶ月以内の具体的な数字・ニュース・出来事（例：〇〇が発表された、相場が〇円台など）があれば台本の冒頭や共感パートに自然に盛り込んでください。"
+            )
             st.info("最新トレンドを取得しました。台本に反映します。")
 
     st.divider()
@@ -2586,9 +2625,12 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
             outline_prompt = build_outline_prompt(outline_info)
             if hq_trend and tavily_api_key:
                 with st.spinner("最新トレンドを検索中..."):
-                    trends = search_trends(tavily_api_key, outline_info.get("category", ""), outline_info.get("name", ""))
+                    trends = search_trends(tavily_api_key, outline_info.get("category", ""), outline_info.get("name", ""), anthropic_api_key=api_key)
                 if trends:
-                    outline_prompt += f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n上記のトレンド情報も構成案に自然に盛り込んでください。"
+                    outline_prompt += (
+                        f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n"
+                        "上記のトレンド情報を構成案に反映してください。特に直近1〜2ヶ月以内の具体的な数字・ニュース・出来事があれば構成の冒頭や共感パートに自然に盛り込んでください。"
+                    )
                     st.info("最新トレンドを取得しました。構成案に反映します。")
             episode_num = int(outline_info.get("episode_structure", "1話完結")[0]) if outline_info.get("episode_structure", "1")[0].isdigit() else 1
             outline_tokens = min(5000 * episode_num, 24000)
