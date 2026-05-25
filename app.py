@@ -1115,6 +1115,57 @@ def search_trends(tavily_api_key, category, product_name, anthropic_api_key=""):
         return ""
 
 
+def _generate_future_risk_queries(api_key, category):
+    """Claudeに未来リスク・社会課題の検索クエリを2つ生成させる。"""
+    try:
+        current_year = datetime.now().year
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"ジャンル「{category}」の商品を販売する動画台本に使える"
+                    f"「未来への不安・社会課題」に関する最新の調査・レポート・統計を調べるための検索クエリを2つ考えてください。\n"
+                    f"・{current_year}年の最新データが取れるクエリにすること\n"
+                    f"・老後資金・AI雇用・年金・格差・インフレ・終身雇用崩壊など視聴者の将来不安に関連するテーマを狙うこと\n"
+                    f"・日本語で、1行1クエリで出力すること（番号・説明不要）"
+                )
+            }]
+        )
+        queries = [q.strip() for q in response.content[0].text.strip().split("\n") if q.strip()]
+        return queries[:2]
+    except Exception:
+        return [f"{category} 将来リスク 調査 {datetime.now().year} 日本"]
+
+
+def search_future_risks(tavily_api_key, category, anthropic_api_key=""):
+    """未来リスク・社会課題に関する最新データをWeb検索して返す。"""
+    try:
+        tavily = TavilyClient(api_key=tavily_api_key)
+        queries = _generate_future_risk_queries(anthropic_api_key, category) if anthropic_api_key else [
+            f"{category} 将来リスク 調査 {datetime.now().year} 日本"
+        ]
+        summaries = []
+        for query in queries:
+            results = tavily.search(
+                query=query,
+                max_results=2,
+                search_depth="advanced",
+                topic="news",
+            )
+            for r in results.get("results", []):
+                title = r.get("title", "")
+                content = r.get("content", "")[:300]
+                published = r.get("published_date", "")
+                date_str = f"（{published[:10]}）" if published else ""
+                summaries.append(f"・{title}{date_str}：{content}")
+        return "\n".join(summaries) if summaries else ""
+    except Exception:
+        return ""
+
+
 def generate_slide_data(client, script):
     """Claudeに台本を渡してスライド構成をJSON形式で生成する（Adaptive Thinking使用）。"""
     char_count = len(script.replace(" ", "").replace("\n", ""))
@@ -2484,14 +2535,21 @@ if submitted:
 
     # トレンド検索
     if use_trend_search and tavily_api_key:
-        with st.spinner("最新トレンドを検索中..."):
+        with st.spinner("最新トレンド・社会課題データを検索中..."):
             trends = search_trends(tavily_api_key, info.get("category", ""), info.get("name", ""), anthropic_api_key=api_key)
+            future_risks = search_future_risks(tavily_api_key, info.get("category", ""), anthropic_api_key=api_key)
         if trends:
             user_prompt += (
                 f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n"
-                "上記のトレンド情報を台本に反映してください。特に直近1〜2ヶ月以内の具体的な数字・ニュース・出来事（例：〇〇が発表された、相場が〇円台など）があれば台本の冒頭や共感パートに自然に盛り込んでください。"
+                "上記のトレンド情報を台本に反映してください。特に直近1〜2ヶ月以内の具体的なニュース・出来事があれば台本の冒頭や共感パートに自然に盛り込んでください。"
             )
-            st.info("最新トレンドを取得しました。台本に反映します。")
+        if future_risks:
+            user_prompt += (
+                f"\n\n## 未来リスク・社会課題データ（Web検索結果）\n{future_risks}\n\n"
+                "上記の未来リスクデータを台本の共感パートや緊急性パートに活用してください。「このまま何もしないと〜」という将来への警告として、具体的な数字は使わず人々の感情・生活への影響で描いてください。"
+            )
+        if trends or future_risks:
+            st.info("最新トレンド・社会課題データを取得しました。台本に反映します。")
 
     st.divider()
     st.subheader("生成結果")
@@ -2644,14 +2702,21 @@ with st.expander("高精度モード（2ステップ生成）", expanded=("outli
             outline_info = build_info_from_session()
             outline_prompt = build_outline_prompt(outline_info)
             if hq_trend and tavily_api_key:
-                with st.spinner("最新トレンドを検索中..."):
+                with st.spinner("最新トレンド・社会課題データを検索中..."):
                     trends = search_trends(tavily_api_key, outline_info.get("category", ""), outline_info.get("name", ""), anthropic_api_key=api_key)
+                    future_risks = search_future_risks(tavily_api_key, outline_info.get("category", ""), anthropic_api_key=api_key)
                 if trends:
                     outline_prompt += (
                         f"\n\n## 最新トレンド・時事情報（Web検索結果）\n{trends}\n\n"
-                        "上記のトレンド情報を構成案に反映してください。特に直近1〜2ヶ月以内の具体的な数字・ニュース・出来事があれば構成の冒頭や共感パートに自然に盛り込んでください。"
+                        "上記のトレンド情報を構成案に反映してください。特に直近1〜2ヶ月以内の具体的なニュース・出来事があれば構成の冒頭や共感パートに自然に盛り込んでください。"
                     )
-                    st.info("最新トレンドを取得しました。構成案に反映します。")
+                if future_risks:
+                    outline_prompt += (
+                        f"\n\n## 未来リスク・社会課題データ（Web検索結果）\n{future_risks}\n\n"
+                        "上記の未来リスクデータを構成の共感パートや緊急性パートに活用してください。「このまま何もしないと〜」という将来への警告として、具体的な数字は使わず人々の感情・生活への影響で描いてください。"
+                    )
+                if trends or future_risks:
+                    st.info("最新トレンド・社会課題データを取得しました。構成案に反映します。")
             episode_num = int(outline_info.get("episode_structure", "1話完結")[0]) if outline_info.get("episode_structure", "1")[0].isdigit() else 1
             outline_tokens = min(5000 * episode_num, 24000)
             st.markdown("**構成案を生成中...**")
