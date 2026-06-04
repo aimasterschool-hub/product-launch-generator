@@ -1791,13 +1791,13 @@ def extract_info_from_document(text: str) -> dict:
 }}
 
 テキスト:
-{text[:10000]}
+{text[:20000]}
 
 JSONのみ返してください。"""
 
     resp = client_ex.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=3000,
+        max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = resp.content[0].text
