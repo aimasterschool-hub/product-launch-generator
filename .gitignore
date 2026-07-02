@@ -1,0 +1,27 @@
+# --- secrets ---
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# --- python ---
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- 生成物 ---
+output/
+*.pptx
+cost_log.json
+presets.json
+
+# --- jupyter ---
+.ipynb_checkpoints/
