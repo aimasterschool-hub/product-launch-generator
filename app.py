@@ -30,7 +30,8 @@ SLIDE_FORMATS = {
     "縦動画（9:16 / TikTok・Shorts・リール）": {"png": (1080, 1920), "pptx": (7.5,  13.33)},
 }
 
-SAMPLES_DIR = Path("samples")
+BASE_DIR = Path(__file__).resolve().parent
+SAMPLES_DIR = BASE_DIR / "samples"
 
 PRESET_SIMPLE_KEYS = [
     "structure_type", "include_knowhow", "knowhow_theme", "knowhow_notes",
@@ -123,9 +124,9 @@ def clear_form_state():
     st.session_state["f_interviewer_first_person"] = "私"
 
 
-OUTPUT_DIR    = Path("output")
-PRESETS_FILE  = Path("presets.json")
-COST_LOG_FILE = Path("cost_log.json")
+OUTPUT_DIR    = BASE_DIR / "output"
+PRESETS_FILE  = BASE_DIR / "presets.json"
+COST_LOG_FILE = BASE_DIR / "cost_log.json"
 MODEL = "claude-sonnet-4-6"
 
 # claude-sonnet-4-6 料金（USD / 1トークン）

@@ -1,1 +1,4 @@
+# Streamlit Cloud で apt install される追加パッケージリスト
+# ローカル開発（macOS）や CI では使われない
+# 参照: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies
 fonts-noto-cjk

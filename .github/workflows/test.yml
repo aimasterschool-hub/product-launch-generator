@@ -19,7 +19,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install python-pptx Pillow
+        run: pip install -r requirements.txt
+
+      - name: Syntax check (all .py)
+        run: python3 -m compileall -q .
 
       - name: Run tests
         run: python3 test_app.py
