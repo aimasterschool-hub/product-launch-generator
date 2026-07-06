@@ -1,5 +1,26 @@
 # HANDOFF — product_launch_generator
-最終更新：2026-07-03
+最終更新：2026-07-06（監査バックログ v1 対応・Streamlit Cloud デプロイ復旧含む）
+
+## 今回完了したこと（2026-07-06 4プロジェクト横断監査セッション）
+- `~/projects/improvement_backlog_v1.md` の監査項目 P02/P04/P05/P06/P07/P08/P17 を適用（`7a7d0f1`）
+  - **P02**：`requirements.txt` に上限指定（`anthropic>=0.40,<1.0` `tavily-python>=0.3,<1.0` 等）
+  - **P04**：`.github/workflows/test.yml` を修正
+    - 旧：`pip install python-pptx Pillow` のみ（requirements.txt 無視）
+    - 新：`pip install -r requirements.txt` + `python3 -m compileall -q .` の構文検査追加
+  - **P05**：未追跡の `generator.py` を削除（2ヶ月放置・app.py と機能重複・
+    モデルID乖離＝Opus vs Sonnet・どこからも import されていなかった）
+  - **P06**：`app.py` の `SAMPLES_DIR/OUTPUT_DIR/PRESETS_FILE/COST_LOG_FILE` を
+    `BASE_DIR = Path(__file__).resolve().parent` 起点化（CWD 依存を解消）
+  - **P07**：`.env.example` 追加
+  - **P08**：`samples/.DS_Store` を `git rm --cached`
+  - **P17**：`packages.txt` に用途コメント追加
+- **⚠️ 事故発生と hotfix（2026-07-06 09:37 UTC）**：
+  - 上記 P17 の `packages.txt` へのコメント追加が Streamlit Cloud デプロイを壊した
+  - Streamlit Cloud は `packages.txt` を `apt-get install` にそのまま渡すため `#` がパッケージ名扱いになり
+    `E: Unable to locate package #` 連発で依存インストール全体失敗
+  - hotfix コミット `0d3d1b5` で `packages.txt` を単純な `fonts-noto-cjk` のみに戻し復旧
+  - 教訓を規約キット §10「デプロイ設定ファイル触るときの規約」として明文化（projects-docs 側）
+- 監査残タスクは `~/projects/improvement_backlog_v1.md §2.3` に「P01/P03/P09〜P16」として登録済
 
 ## プロジェクト位置づけ
 マスターブループリント v1.1「ライン2：投資商品・ローンチ制作」の**ローンチ台本ジェネレーター（RAGベース：過去台本学習→新規VSL生成）**。
