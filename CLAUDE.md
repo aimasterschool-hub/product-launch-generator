@@ -6,7 +6,7 @@
 
 ★**バグの型の正本はここ1か所です**（★写してはいけません。★読んでください）:
 
-- `~/projects/defect_types_master_v1.md`（★型 88件・T-A〜T-CI）
+- `~/projects/defect_types_master_v1.md`（★型 89件・T-A〜T-CJ）
 - GitHub: https://github.com/aimasterschool-hub/projects-docs/blob/main/defect_types_master_v1.md
 - ★実例と「直した形」の詳細: `~/projects/youtube-tool/docs/defect_map.md` の §3
 
