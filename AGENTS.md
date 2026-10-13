@@ -6,7 +6,7 @@
 
 ★**バグの型の正本はここ1か所です**（★写してはいけません。★読んでください）:
 
-- `~/projects/defect_types_master_v1.md`（★型 110件・T-A〜T-DE）
+- `~/projects/defect_types_master_v1.md`（★型 111件・T-A〜T-DF）
 - GitHub: https://github.com/aimasterschool-hub/projects-docs/blob/main/defect_types_master_v1.md
 - ★実例と「直した形」の詳細: `~/projects/youtube-tool/docs/defect_map.md` の §3
 
@@ -32,5 +32,9 @@
 
 - ★作業の前に `~/projects/ai-handoff-hub/projects/global-ai-handoff/PREFLIGHT.md` を読み、★7項目（過去の失敗を引く・失敗の予測3つ・前提の鮮度・本人に頼む前の理由・数字の出典・全部数える・記録）を通す
 - ★報告に★4つの欄（過去の失敗／失敗の予測／本人に頼んだこと／数字の出典）を入れる。★欄が無いと DONE にならない（Hub の `tools/check_preflight.py`）
+
+### ★Hub に書くとき（2026-10-13 GAH-HUB-OWN-CLONE・型 T-DE・全案件で必須）
+
+- ★Hub（ai-handoff-hub）に書くときは `python3 ~/projects/ai-handoff-hub/tools/hubgit.py clone <作業のID>` の clone で書き、`hubgit.py push` で上げる。共有の作業場では commit・push しない
 
 <!-- ★共通の入口 ここまで -->
