@@ -44,4 +44,8 @@
 - ★取り込みは QUEUED（未着手）。作業中（IN_PROGRESS）は task_owner の claim のあとだけ。未着手は `python3 ~/projects/ai-handoff-hub/tools/task_queue.py list` で見る（30分で ⚠・QG-007・T-DH）
 - ★担当の印と状態は作業ごと。番号の部分が重なる作業IDは取り込まない。auto_start: yes の作業は Mac の見張りが自動で始める（同時1本・1日の上限・止める設定あり・QG-009・T-DH）
 
+### ★本番に出す前の別の目（2026-10-15 QG-008・型 T-I・T-AT・全案件で必須）
+
+- ★本番に出す前は、作業を見ていない別の目（Codex か新しい Claude Code・1本）が検査の部品と本物の値を照らし、`projects/<slug>/reviews/` に記録する。記録が無ければ配置の道具が止まる（`tools/second_eye.py`・`tools/check_review.py`・`run_checked.py clasp-deploy`）
+
 <!-- ★共通の入口 ここまで -->
