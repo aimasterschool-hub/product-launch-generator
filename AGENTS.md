@@ -41,5 +41,6 @@
 
 - ★作業を始める前に `python3 ~/projects/ai-handoff-hub/tools/task_owner.py claim <案件> <作業のID>` で担当の印を付ける（Codex は `--window <画面の id>`）。★担当中の画面があれば、後から来た画面は聞かずに「この作業は画面 ◯◯ が担当中です。この画面は閉じてOK」とだけ出して終わる（終了コード 4。読めない 2 は引き継がずに止まる・QG-005・T-DE）
 - ★報告の先頭は「やったこと・結果・次（本人／AI）」の3見出し、STATE の先頭は「最終更新・現在地・次の一手・詰まっている点」（型は `~/projects/ai-handoff-hub/projects/global-ai-handoff/HUB_RULES.md`）
+- ★取り込みは QUEUED（未着手）。作業中（IN_PROGRESS）は task_owner の claim のあとだけ。未着手は `python3 ~/projects/ai-handoff-hub/tools/task_queue.py list` で見る（30分で ⚠・QG-007・T-DH）
 
 <!-- ★共通の入口 ここまで -->
